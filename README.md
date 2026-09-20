@@ -1,80 +1,127 @@
-<![CDATA[# 🗣️ GuideTalk
+<div align="center">
 
-**GuideTalk** is an AI-powered anime/game character companion app built with Expo & React Native. Chat with your favourite characters (Genshin Impact, Anime, etc.), explore a dynamic discover feed with real-time image fetching, and enjoy voice-enabled conversations — all wrapped in a sleek, dark-mode-first UI.
+<img src="https://readme-typing-svg.demolab.com?font=Orbitron&weight=700&size=40&duration=3000&pause=1000&color=A855F7&center=true&vCenter=true&repeat=false&width=600&height=80&lines=GuideTalk+%F0%9F%97%A3%EF%B8%8F" alt="GuideTalk" />
+
+<p align="center">
+  <b>AI-powered anime & game character companion app</b><br/>
+  Chat with your favourite characters — in their own voice, powered by Azure OpenAI
+</p>
+
+<br/>
+
+[![Expo](https://img.shields.io/badge/Expo-SDK%2051-000020?style=for-the-badge&logo=expo&logoColor=white)](https://expo.dev)
+[![React Native](https://img.shields.io/badge/React%20Native-0.74-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://reactnative.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![MongoDB](https://img.shields.io/badge/MongoDB-Local-47A248?style=for-the-badge&logo=mongodb&logoColor=white)](https://mongodb.com)
+[![Azure OpenAI](https://img.shields.io/badge/Azure%20OpenAI-GPT-0089D6?style=for-the-badge&logo=microsoftazure&logoColor=white)](https://azure.microsoft.com/en-us/products/ai-services/openai-service)
+[![License](https://img.shields.io/badge/License-MIT-purple?style=for-the-badge)](LICENSE)
+
+</div>
 
 ---
 
 ## ✨ Features
 
-- 🤖 **AI Character Chat** — Powered by Azure OpenAI (GPT), characters respond in-character with unique personalities
-- 🎙️ **Voice Messages** — Record and play back voice messages with animated waveforms
-- 🔍 **Dynamic Discover Feed** — Real-time image fetching from the web for characters, anime, and game content
-- 🎠 **Spotlight Carousel** — Smoky blur backdrop transitions with manual swipe support
-- 🌗 **Dark / Light Theme** — Full theme support with high-contrast audio bubbles
-- 🏠 **Explore Hall** — Browse characters by category with AI-powered recommendations
-- 🧭 **Rival Encounters** — Dynamically fetched rival content based on current character context
-- 📱 **Cross-platform** — iOS & Android via Expo
+<table>
+<tr>
+<td width="50%">
+
+### 🤖 AI Character Chat
+Chat with characters from Genshin Impact, anime, and more — each one responds in their own unique personality powered by Azure OpenAI.
+
+</td>
+<td width="50%">
+
+### 🎙️ Voice Messages
+Record and play back voice messages with smooth animated waveforms and full dark-mode support.
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 🔍 Dynamic Discovery Feed
+Real-time image fetching from the internet — the feed always shows fresh, relevant character content based on your activity.
+
+</td>
+<td width="50%">
+
+### 🎠 Spotlight Carousel
+Netflix-style smoky blur backdrop with silky smooth manual swipe transitions.
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 🌗 Dark / Light Theme
+Full theme support with high-contrast audio bubbles and adaptive UI across every screen.
+
+</td>
+<td width="50%">
+
+### 🧭 Rival Encounters
+Dynamically fetched rival/companion suggestions that update based on the character you're currently chatting with.
+
+</td>
+</tr>
+</table>
 
 ---
 
-## 🏗️ Tech Stack
+## 🛠️ Tech Stack
 
 | Layer | Technology |
-|---|---|
-| Mobile App | Expo SDK 51, React Native |
-| Routing | Expo Router (file-based) |
-| Language | TypeScript |
-| Backend | Node.js + Express (ESM) |
-| Database | MongoDB |
-| AI | Azure OpenAI (GPT-4 / custom deployments) |
-| Image Fetching | Bing Image Search API (dynamic) |
-| Animation | React Native Reanimated, `Animated` API |
-
----
-
-## 📋 Prerequisites
-
-Make sure you have the following installed before starting:
-
-- **Node.js** `>= 18` — [nodejs.org](https://nodejs.org)
-- **npm** `>= 9` (comes with Node.js)
-- **Expo CLI** — installed automatically via `npx`
-- **MongoDB** — [Install locally](https://www.mongodb.com/docs/manual/installation/) or use [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)
-- **Expo Go** app on your phone (iOS/Android) — OR an emulator/simulator
+|:---|:---|
+| 📱 Mobile App | Expo SDK 51 + React Native |
+| 🧭 Routing | Expo Router (file-based) |
+| 🔤 Language | TypeScript |
+| ⚙️ Backend | Node.js + Express (ESM modules) |
+| 🗄️ Database | MongoDB |
+| 🧠 AI | Azure OpenAI (GPT) |
+| 🖼️ Image Fetching | Dynamic internet search with DiceBear fallback |
+| 🎞️ Animation | React Native Reanimated + Animated API |
 
 ---
 
 ## 🚀 Getting Started
 
-### 1. Clone the repository
+### Prerequisites
+
+Before you begin, make sure you have the following:
+
+- **Node.js** `>= 18` → [nodejs.org](https://nodejs.org)
+- **MongoDB** running locally → [Install guide](https://www.mongodb.com/docs/manual/installation/) or use [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)
+- **Azure OpenAI** resource with a GPT deployment → [Azure Portal](https://portal.azure.com)
+- **Expo Go** app on your phone (iOS / Android)
+
+---
+
+### 1️⃣ Clone the repo
 
 ```bash
 git clone https://github.com/samjoshua2002/GuideTalk.git
 cd GuideTalk
 ```
 
-### 2. Install frontend dependencies
+### 2️⃣ Install dependencies
 
 ```bash
+# Frontend
 npm install
+
+# Backend
+cd server && npm install && cd ..
 ```
 
-### 3. Install backend dependencies
+### 3️⃣ Set up environment variables
 
-```bash
-cd server
-npm install
-cd ..
-```
+**Frontend** — copy the template and fill in your values:
 
-### 4. Configure environment variables
-
-**Frontend** — copy and fill in your values:
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env`:
 ```env
 EXPO_PUBLIC_API_URL=http://localhost:3000
 EXPO_PUBLIC_AZURE_OPENAI_ENDPOINT=https://YOUR_RESOURCE.openai.azure.com/
@@ -83,55 +130,45 @@ EXPO_PUBLIC_AZURE_OPENAI_DEPLOYMENT=YOUR_DEPLOYMENT_NAME
 EXPO_PUBLIC_AZURE_OPENAI_API_KEY=YOUR_API_KEY
 ```
 
-**Backend** — copy and fill in your values:
+**Backend** — copy the template and fill in your values:
+
 ```bash
 cp server/.env.example server/.env
 ```
 
-Edit `server/.env`:
 ```env
 AZURE_OPENAI_API_KEY=YOUR_API_KEY
 AZURE_OPENAI_ENDPOINT=https://YOUR_RESOURCE.openai.azure.com/
-AZURE_OPENAI_API_VERSION=2025-01-01-preview
 AZURE_OPENAI_DEPLOYMENT=YOUR_DEPLOYMENT_NAME
 MONGODB_URI=mongodb://127.0.0.1:27017
 MONGODB_DATABASE=guildtalk
 PORT=3000
-CORS_ORIGINS=http://localhost:8081
 ```
 
-### 5. Start MongoDB
+### 4️⃣ Start MongoDB
 
 ```bash
 # macOS (Homebrew)
 brew services start mongodb-community
 
-# Linux (systemd)
+# Linux
 sudo systemctl start mongod
-
-# Or use your MongoDB Atlas connection string in MONGODB_URI
 ```
 
-### 6. Start the backend server
+### 5️⃣ Start the backend
 
 ```bash
 node server/index.mjs
+# Server runs at http://localhost:3000
 ```
 
-The server will run at `http://localhost:3000`.
-
-### 7. Start the Expo app
-
-Open a **new terminal tab** and run:
+### 6️⃣ Start the app
 
 ```bash
 npx expo start
 ```
 
-Then:
-- **Scan the QR code** with the Expo Go app on your phone, OR
-- Press `a` to open on Android emulator, OR
-- Press `i` to open on iOS simulator
+> Scan the QR code with **Expo Go** on your phone, or press `a` for Android emulator / `i` for iOS simulator.
 
 ---
 
@@ -139,28 +176,35 @@ Then:
 
 ```
 GuideTalk/
-├── app/                    # Expo Router screens (file-based routing)
-│   ├── (tabs)/             # Tab bar screens
-│   │   ├── index.tsx       # Home / Discover feed
-│   │   ├── explore.tsx     # Explore Hall
-│   │   └── profile.tsx     # User profile
-│   ├── chat/
-│   │   └── [id].tsx        # Character chat screen
-│   └── character/
-│       └── [id].tsx        # Character detail page
-├── src/
-│   ├── components/         # Reusable UI components
-│   ├── data/               # Static character data
-│   ├── lib/                # Services (AI, image fetching, etc.)
-│   ├── theme/              # Colors, typography, spacing
-│   └── types/              # TypeScript interfaces
-├── server/
-│   ├── index.mjs           # Express backend (AI chat, DB)
-│   ├── .env.example        # Backend env template
+├── 📱 app/                     # Expo Router screens
+│   ├── (tabs)/
+│   │   ├── index.tsx           # Home — Discover & Spotlight
+│   │   ├── chats.tsx           # Chat list
+│   │   └── profile.tsx         # User profile
+│   ├── chat/[id].tsx           # Character chat screen
+│   ├── character/[id].tsx      # Character detail page
+│   └── search.tsx              # Search screen
+│
+├── 🧩 src/
+│   ├── components/             # Reusable UI components
+│   │   ├── VoiceMessageBubble.tsx
+│   │   ├── CharacterCard.tsx
+│   │   └── LiquidGlassView.tsx
+│   ├── data/                   # Character & rival data
+│   ├── lib/                    # Services & utilities
+│   │   ├── dynamicImageService.tsx   # Real-time image fetching
+│   │   └── chatApi.ts                # AI chat integration
+│   ├── theme/                  # Colors, typography
+│   └── types/                  # TypeScript interfaces
+│
+├── ⚙️ server/
+│   ├── index.mjs               # Express backend (AI + DB)
+│   ├── .env.example
 │   └── package.json
-├── .env.example            # Frontend env template
-├── app.json                # Expo configuration
-└── package.json
+│
+├── .env.example                # Frontend env template
+├── app.json                    # Expo configuration
+└── README.md
 ```
 
 ---
@@ -170,36 +214,41 @@ GuideTalk/
 ### Frontend (`.env`)
 
 | Variable | Description |
-|---|---|
+|:---|:---|
 | `EXPO_PUBLIC_API_URL` | URL of the backend server |
 | `EXPO_PUBLIC_AZURE_OPENAI_ENDPOINT` | Azure OpenAI resource endpoint |
-| `EXPO_PUBLIC_AZURE_OPENAI_API_VERSION` | API version (e.g. `2025-01-01-preview`) |
-| `EXPO_PUBLIC_AZURE_OPENAI_DEPLOYMENT` | Deployment/model name |
-| `EXPO_PUBLIC_AZURE_OPENAI_API_KEY` | Your Azure OpenAI API key |
+| `EXPO_PUBLIC_AZURE_OPENAI_API_VERSION` | API version |
+| `EXPO_PUBLIC_AZURE_OPENAI_DEPLOYMENT` | Model deployment name |
+| `EXPO_PUBLIC_AZURE_OPENAI_API_KEY` | Azure OpenAI API key |
 
 ### Backend (`server/.env`)
 
 | Variable | Description |
-|---|---|
-| `AZURE_OPENAI_API_KEY` | Your Azure OpenAI API key |
+|:---|:---|
+| `AZURE_OPENAI_API_KEY` | Azure OpenAI API key |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI resource endpoint |
-| `AZURE_OPENAI_DEPLOYMENT` | Deployment/model name |
+| `AZURE_OPENAI_DEPLOYMENT` | Model deployment name |
 | `MONGODB_URI` | MongoDB connection URI |
-| `MONGODB_DATABASE` | Database name |
-| `PORT` | Port for the Express server (default: `3000`) |
-| `CORS_ORIGINS` | Allowed CORS origin (e.g. `http://localhost:8081`) |
+| `MONGODB_DATABASE` | Database name (default: `guildtalk`) |
+| `PORT` | Backend port (default: `3000`) |
+| `CORS_ORIGINS` | Allowed CORS origin |
 
 ---
 
-## ⚠️ Security Notice
+## ⚠️ Security
 
-- **Never commit your `.env` files** — they are gitignored by default.
-- Do not share your `AZURE_OPENAI_API_KEY` or MongoDB credentials publicly.
-- Rotate your keys if they are ever accidentally exposed.
+> **Never commit your `.env` files.** They are gitignored by default.
+>
+> Do not share your `AZURE_OPENAI_API_KEY` or MongoDB credentials publicly.
+> If they are ever accidentally exposed, rotate them immediately at [portal.azure.com](https://portal.azure.com).
 
 ---
 
 ## 📄 License
 
-MIT — feel free to fork and build on top of this project!
-]]>
+MIT — feel free to fork, build on, and contribute to this project!
+
+<div align="center">
+<br/>
+Made with ❤️ by <a href="https://github.com/samjoshua2002">@samjoshua2002</a>
+</div>
