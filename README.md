@@ -84,6 +84,58 @@ Dynamically fetched rival/companion suggestions that update based on the charact
 
 ---
 
+## 📦 Packages & Versions
+
+### 📱 Frontend Core
+
+| Package | Version | Purpose |
+|:---|:---:|:---|
+| `expo` | `^57.0.0` | Core Expo SDK |
+| `react` | `19.2.3` | UI library |
+| `react-native` | `0.86.3` | Cross-platform native runtime |
+| `react-dom` | `19.2.3` | Web support |
+| `react-native-web` | `^0.21.2` | React Native → Web bridge |
+| `typescript` | `~5.7.2` | Static typing |
+
+### 🧭 Expo Modules
+
+| Package | Version | Purpose |
+|:---|:---:|:---|
+| `expo-router` | `~57.0.22` | File-based navigation |
+| `expo-blur` | `~57.0.3` | Blur/glass effects |
+| `expo-audio` | `~57.0.5` | Audio recording & playback |
+| `expo-speech` | `^57.0.3` | Text-to-speech |
+| `expo-speech-recognition` | `^57.1.0` | Voice input |
+| `expo-image` | `~57.0.5` | Optimised image rendering |
+| `expo-image-picker` | `~57.0.19` | Camera / gallery picker |
+| `expo-linear-gradient` | `~57.0.2` | Gradient backgrounds |
+| `expo-haptics` | `~57.0.3` | Tactile feedback |
+| `expo-secure-store` | `~57.0.4` | Encrypted local storage |
+| `expo-constants` | `~57.0.19` | App config & env access |
+| `expo-font` | `~57.0.4` | Custom font loading |
+| `expo-linking` | `~57.0.10` | Deep linking |
+| `expo-status-bar` | `~57.0.1` | Status bar control |
+| `expo-asset` | `~57.0.18` | Asset management |
+| `@expo/vector-icons` | `^15.0.2` | Icon library |
+
+### 🧱 React Navigation & Layout
+
+| Package | Version | Purpose |
+|:---|:---:|:---|
+| `@react-navigation/native` | `^7.0.14` | Navigation container |
+| `react-native-screens` | `~4.26.0` | Native screen optimisation |
+| `react-native-safe-area-context` | `~5.7.0` | Safe area insets |
+
+### ⚙️ Backend (server/)
+
+| Package | Version | Purpose |
+|:---|:---:|:---|
+| `mongodb` | `^7.6.0` | MongoDB Node.js driver |
+| `dotenv` | `^16.4.7` | Environment variable loader |
+| Node.js | `>= 18` | Runtime (ESM modules) |
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
