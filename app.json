@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "GuildTalk",
+    "slug": "guildtalk",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "guildtalk",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-router",
+      "expo-asset"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.samjoshua2002.guildtalk"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#100D1D"
+      },
+      "package": "com.samjoshua2002.guildtalk"
+    }
+  }
+}

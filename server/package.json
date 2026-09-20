@@ -1,0 +1,12 @@
+{
+  "name": "guildtalk-local-ai-proxy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "mongodb": "^7.6.0"
+  }
+}
