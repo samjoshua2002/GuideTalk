@@ -20,6 +20,12 @@
         "backgroundColor": "#100D1D"
       },
       "package": "com.samjoshua2002.guildtalk"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "05720c5e-6279-4d8d-b20a-45c2114a9dc8"
+      }
     }
   }
 }
