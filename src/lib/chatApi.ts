@@ -84,6 +84,7 @@ async function findWorkingBaseUrl(): Promise<string | null> {
   probePromise = (async () => {
     const candidateBases = [
       env.apiUrl,
+      'https://guidetalk.onrender.com',
       'http://192.168.0.232:3000',
       Platform.OS === 'android' ? 'http://10.0.2.2:3000' : null,
       'http://localhost:3000',
@@ -93,8 +94,9 @@ async function findWorkingBaseUrl(): Promise<string | null> {
 
     const check = async (base: string): Promise<string | null> => {
       const clean = base.replace(/\/$/, '');
+      const probeTimeout = clean.startsWith('https://') ? 5000 : 1800;
       try {
-        const res = await fetchWithTimeout(`${clean}/characters`, { method: 'GET' }, 1800);
+        const res = await fetchWithTimeout(`${clean}/characters`, { method: 'GET' }, probeTimeout);
         if (res.ok || res.status === 404 || res.status === 401) {
           return clean;
         }
