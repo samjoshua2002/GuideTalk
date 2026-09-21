@@ -10,7 +10,6 @@
       "DOM"
     ],
     "jsx": "react-jsx",
-    "downlevelIteration": true,
     "paths": {
       "@/*": [
         "./*"

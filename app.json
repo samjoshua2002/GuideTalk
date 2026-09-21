@@ -7,7 +7,6 @@
     "scheme": "guidetalk",
     "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
     "plugins": [
       "expo-router",
       "expo-asset",
