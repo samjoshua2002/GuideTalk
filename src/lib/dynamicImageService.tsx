@@ -24,6 +24,9 @@ const listeners = new Set<CacheListener>();
       for (const [k, v] of Object.entries(parsed)) {
         if (v && typeof v === 'string') memoryImageCache.set(k, v);
       }
+      for (const [k, v] of memoryImageCache.entries()) {
+        listeners.forEach((fn) => fn(k, v));
+      }
     }
   } catch {}
 })();
