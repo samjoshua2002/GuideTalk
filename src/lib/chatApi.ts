@@ -805,8 +805,8 @@ export async function fetchDynamicCharacterImage(
   name: string,
   series?: string,
   force?: boolean
-): Promise<string | null> {
-  if (!name) return null;
+): Promise<{ imageUrl: string | null; candidates?: string[] }> {
+  if (!name) return { imageUrl: null };
   try {
     const params = new URLSearchParams({
       name,
@@ -815,13 +815,13 @@ export async function fetchDynamicCharacterImage(
     });
     const res = await apiFetch(`/api/character-image?${params.toString()}`);
     if (res.ok) {
-      const data = await parseResponse<{ imageUrl?: string }>(res);
-      return data?.imageUrl || null;
+      const data = await parseResponse<{ imageUrl?: string; candidates?: string[] }>(res);
+      return { imageUrl: data?.imageUrl || null, candidates: data?.candidates };
     }
   } catch {
     // Fallback gracefully to built-in avatar/cover art when offline
   }
-  return null;
+  return { imageUrl: null };
 }
 
 // ----------------------------------------------------------------------

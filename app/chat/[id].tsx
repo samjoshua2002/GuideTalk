@@ -29,7 +29,7 @@ import { useTheme } from '@/src/context/ThemeContext';
 import { useAuth } from '@/src/context/AuthContext';
 import { getCharacter, characters, getAllBuiltinCharacters } from '@/src/data/characters';
 import { Character } from '@/src/types/character';
-import { DynamicCharacterImage, resolveCharacterImage } from '@/src/lib/dynamicImageService';
+import { DynamicCharacterImage, resolveCharacterImage, cycleCharacterImage } from '@/src/lib/dynamicImageService';
 import {
   createConversation,
   getConversationMessages,
@@ -354,7 +354,7 @@ export default function ChatScreen() {
     if (!character) return;
     triggerHaptic('medium');
     setIsResolvingImage(true);
-    await resolveCharacterImage(character, true);
+    await cycleCharacterImage(character);
     setIsResolvingImage(false);
     triggerHaptic('success');
   };

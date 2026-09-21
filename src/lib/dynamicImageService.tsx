@@ -9,6 +9,8 @@ const CACHE_STORAGE_KEY = 'guildtalk_dynamic_character_images_v1';
 
 // In-memory cache of resolved real character images: key -> URL
 const memoryImageCache = new Map<string, string>();
+// Candidates pool for instant "Change Look" cycling: key -> URL[]
+const candidatesCache = new Map<string, string[]>();
 // Pending fetch promises to deduplicate simultaneous requests
 const pendingFetches = new Map<string, Promise<string | null>>();
 // Listeners subscribed to image resolution updates
@@ -66,7 +68,12 @@ export async function resolveCharacterImage(
 
   const fetchPromise = (async () => {
     try {
-      const fetchedUrl = await fetchDynamicCharacterImage(char.name!, char.series, force);
+      const result = await fetchDynamicCharacterImage(char.name!, char.series, force);
+      const fetchedUrl = result.imageUrl;
+      // Store candidates for instant cycling
+      if (result.candidates && result.candidates.length > 0) {
+        candidatesCache.set(key, result.candidates);
+      }
       if (fetchedUrl) {
         memoryImageCache.set(key, fetchedUrl);
         persistCache().catch(() => {});
@@ -87,6 +94,34 @@ export async function resolveCharacterImage(
 
   pendingFetches.set(key, fetchPromise);
   return fetchPromise;
+}
+
+/**
+ * Instantly cycle to the next candidate image without a server call.
+ * If no cached candidates exist, falls back to a full server fetch.
+ */
+export async function cycleCharacterImage(
+  char?: Partial<Character> | { name: string; series?: string } | null
+): Promise<string | null> {
+  if (!char || !char.name) return null;
+  const key = getCacheKey(char.name, char.series);
+  const pool = candidatesCache.get(key);
+  const currentUrl = memoryImageCache.get(key);
+
+  // If we have cached candidates, pick a different one instantly
+  if (pool && pool.length > 1) {
+    const filtered = pool.filter((u) => u !== currentUrl);
+    const pick = filtered.length > 0
+      ? filtered[Math.floor(Math.random() * filtered.length)]
+      : pool[Math.floor(Math.random() * pool.length)];
+    memoryImageCache.set(key, pick);
+    persistCache().catch(() => {});
+    listeners.forEach((fn) => fn(key, pick));
+    return pick;
+  }
+
+  // No local candidates — do a full server fetch
+  return resolveCharacterImage(char, true);
 }
 
 /**
