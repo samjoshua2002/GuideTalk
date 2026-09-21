@@ -12,8 +12,8 @@ export const characters: Character[] = [
     personality: ['Theatrical', 'Sarcastic & Witty', 'Dramatic', 'Tea Lover', 'Sweet Tooth'],
     roleplayRules: 'Speak in an elegant, theatrical, highly expressive style as if every sentence were a grand stage performance. Use playful sarcasm, dramatic flair, and tease the user lovingly. Melt into tender vulnerability when met with sincere kindness.',
     greeting: 'Ah, at last—you have arrived before Fontaine’s most dazzling star! Come, take your seat and tell me: what grand drama shall we stage today?',
-    avatarUrl: 'https://static.wikia.nocookie.net/genshin-impact/images/2/27/Furina_Card.png/revision/latest?cb=20230925100151',
-    coverUrl: 'https://static.wikia.nocookie.net/genshin-impact/images/2/27/Furina_Card.png/revision/latest?cb=20230925100151',
+    avatarUrl: 'https://i.pinimg.com/736x/88/2c/37/882c377db9316d3bbd643806be9fc12d.jpg',
+    coverUrl: 'https://i.pinimg.com/736x/88/2c/37/882c377db9316d3bbd643806be9fc12d.jpg',
     accent: '#5ED8F2',
     isOnline: true,
     starters: [
@@ -33,8 +33,8 @@ export const characters: Character[] = [
     personality: ['Playful', 'Cheeky & Sarcastic', 'Energetic', 'Poet'],
     roleplayRules: 'Be bouncy, mischievous, and speak with playful rhymes and teasing humor. Joke about ghosts and coffins with cute sarcasm.',
     greeting: 'Oho! Look who wandered into my parlor! Need a coupon for a luxury casket, or are you just here to compose spooky rhymes with me?',
-    avatarUrl: 'https://static.wikia.nocookie.net/genshin-impact/images/8/88/Hu_Tao_Card.png/revision/latest?cb=20240426170327',
-    coverUrl: 'https://static.wikia.nocookie.net/genshin-impact/images/8/88/Hu_Tao_Card.png/revision/latest?cb=20240426170327',
+    avatarUrl: 'https://i.pinimg.com/736x/95/92/83/959283fa7442eb839178ad3a6b5791c5.jpg',
+    coverUrl: 'https://i.pinimg.com/736x/95/92/83/959283fa7442eb839178ad3a6b5791c5.jpg',
     accent: '#F87171',
     isOnline: true,
     starters: [
@@ -54,8 +54,8 @@ export const characters: Character[] = [
     personality: ['Stoic', 'Cute Sweet-Tooth', 'Majestic', 'Protective'],
     roleplayRules: 'Speak formally and regal like a warrior deity, but display adorable flustered awkwardness whenever sweets or mundane modern things are mentioned.',
     greeting: 'State your purpose before the Narukami Ogosho. ...Unless you brought Dango milk from the market? If so, you may enter at once.',
-    avatarUrl: 'https://static.wikia.nocookie.net/genshin-impact/images/6/60/Raiden_Shogun_Card.png/revision/latest?cb=20241007221517',
-    coverUrl: 'https://static.wikia.nocookie.net/genshin-impact/images/6/60/Raiden_Shogun_Card.png/revision/latest?cb=20241007221517',
+    avatarUrl: 'https://i.pinimg.com/736x/2b/23/bf/2b23bf41031d279cf441e3dbe7814b74.jpg',
+    coverUrl: 'https://i.pinimg.com/736x/2b/23/bf/2b23bf41031d279cf441e3dbe7814b74.jpg',
     accent: '#A855F7',
     isOnline: true,
     starters: [
@@ -75,8 +75,8 @@ export const characters: Character[] = [
     personality: ['Carefree', 'Smug & Sarcastic', 'Unbeatable', 'Playful'],
     roleplayRules: 'Speak with effortless swagger, playful arrogance, and comedic sarcasm. Act like everything is easy because you are the strongest.',
     greeting: 'Yo! You look stressed. Did a low-grade curse look at you funny? Don’t worry, the handsome Gojo-sensei is right here.',
-    avatarUrl: 'https://safebooru.org/images/336/ae7451315b671b42b04e2c09e6fb5b05eb9f25e9.jpg',
-    coverUrl: 'https://safebooru.org/images/336/ae7451315b671b42b04e2c09e6fb5b05eb9f25e9.jpg',
+    avatarUrl: 'https://i.pinimg.com/736x/13/2e/dc/132edc77bf6b3d4f4007886470878ca3.jpg',
+    coverUrl: 'https://i.pinimg.com/736x/13/2e/dc/132edc77bf6b3d4f4007886470878ca3.jpg',
     accent: '#38BDF8',
     isOnline: true,
     starters: [

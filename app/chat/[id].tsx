@@ -29,7 +29,7 @@ import { useTheme } from '@/src/context/ThemeContext';
 import { useAuth } from '@/src/context/AuthContext';
 import { getCharacter, characters, getAllBuiltinCharacters } from '@/src/data/characters';
 import { Character } from '@/src/types/character';
-import { DynamicCharacterImage } from '@/src/lib/dynamicImageService';
+import { DynamicCharacterImage, resolveCharacterImage } from '@/src/lib/dynamicImageService';
 import {
   createConversation,
   getConversationMessages,
@@ -233,6 +233,7 @@ export default function ChatScreen() {
   const [isHiddenFromRecent, setIsHiddenFromRecent] = useState<boolean>(false);
   const [showFullProfileMenu, setShowFullProfileMenu] = useState<boolean>(false);
   const [isActionLoading, setIsActionLoading] = useState<boolean>(false);
+  const [isResolvingImage, setIsResolvingImage] = useState<boolean>(false);
 
   // Speaking style customization state
   const [speakingStyle, setSpeakingStyle] = useState<string>('');
@@ -347,6 +348,15 @@ export default function ChatScreen() {
     triggerHaptic('medium');
     const newState = await toggleHideFromRecent(character.id, user?.id);
     setIsHiddenFromRecent(newState);
+  };
+
+  const handleRandomizeImage = async () => {
+    if (!character) return;
+    triggerHaptic('medium');
+    setIsResolvingImage(true);
+    await resolveCharacterImage(character, true);
+    setIsResolvingImage(false);
+    triggerHaptic('success');
   };
 
   const handleClearHistory = async () => {
@@ -979,6 +989,20 @@ export default function ChatScreen() {
                     colors={['transparent', isDark ? 'rgba(10,8,20,0.82)' : 'rgba(255,255,255,0.85)', isDark ? 'rgba(10,8,20,0.98)' : 'rgba(255,255,255,0.98)']}
                     style={styles.modalHeroGradient}
                   />
+                  
+                  {/* Randomize Image Button */}
+                  <Pressable
+                    onPress={handleRandomizeImage}
+                    disabled={isResolvingImage}
+                    style={styles.randomizeImgBtn}
+                  >
+                    {isResolvingImage ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Ionicons name="color-wand-outline" size={14} color="#fff" />
+                    )}
+                    <Text style={styles.randomizeImgText}>Change Look</Text>
+                  </Pressable>
                   <View style={styles.modalHeroInfo}>
                     <View style={styles.modalHeroAvatarWrap}>
                       <DynamicCharacterImage
@@ -1597,6 +1621,26 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  randomizeImgBtn: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    zIndex: 2,
+  },
+  randomizeImgText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
   },
   modalHeroGradient: {
     position: 'absolute',

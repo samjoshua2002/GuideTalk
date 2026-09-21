@@ -26,12 +26,12 @@ import { getAllBuiltinCharacters, registerCustomCharacter } from '@/src/data/cha
 import Constants from 'expo-constants';
 import { getAllPresets, CATEGORY_PRESETS, UniverseCategory, RivalRelation, getRivalsForWorkspace } from '@/src/data/rivals';
 import { Character } from '@/src/types/character';
-import { fetchCharacters, listConversations, ConversationSummary, fetchRecommendations, fetchDynamicRivals, fetchAppVersion, AppVersionInfo } from '@/src/lib/chatApi';
+import { fetchCharacters, listConversations, ConversationSummary, fetchRecommendations, fetchDynamicRivals } from '@/src/lib/chatApi';
 import { LiquidGlassView } from '@/src/components/LiquidGlassView';
 import { GlowButton } from '@/src/components/GlowButton';
 import { AuthModal } from '@/src/components/AuthModal';
 import { NotificationsModal } from '@/src/components/NotificationsModal';
-import { UpdateAvailableModal } from '@/src/components/UpdateAvailableModal';
+
 import { OnboardingStoryboard } from '@/src/components/OnboardingStoryboard';
 import { triggerHaptic } from '@/src/lib/haptics';
 import {
@@ -264,20 +264,7 @@ export default function DiscoverScreen() {
   const [favoriteCharacters, setFavoriteCharacters] = useState<Character[]>([]);
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [notificationsList, setNotificationsList] = useState<InAppNotification[]>([]);
-  const [updateInfo, setUpdateInfo] = useState<AppVersionInfo | null>(null);
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
 
-  useEffect(() => {
-    fetchAppVersion().then((info) => {
-      if (!info) return;
-      const currentVer = Constants.expoConfig?.version || '1.0.0';
-      const currentCode = (Constants.expoConfig as any)?.android?.versionCode || 1;
-      if (info.latestVersionCode > currentCode || info.latestVersion !== currentVer) {
-        setUpdateInfo(info);
-        setShowUpdateModal(true);
-      }
-    });
-  }, []);
 
   const loadFavorites = useCallback(async () => {
     try {
@@ -1832,12 +1819,163 @@ export default function DiscoverScreen() {
           </View>
 
         {/* ============================================================ */}
+        {/* ANIME WAIFUS & HUSBANDOS — PRESET GALLERY                   */}
+        {/* ============================================================ */}
+        {(() => {
+          const { WAIFUS_AND_HUSBANDS } = require('@/src/data/waifusAndHusbands');
+          const waifus = WAIFUS_AND_HUSBANDS.filter((c: any) => c.gender === 'waifu');
+          const husbandos = WAIFUS_AND_HUSBANDS.filter((c: any) => c.gender === 'husbando');
+          return (
+            <View style={styles.waifuSection}>
+              {/* Section Header */}
+              <View style={styles.sectionHeader}>
+                <View>
+                  <Text style={[styles.sectionEyebrow, { color: '#AF52DE' }]}>ANIME ORIGINALS</Text>
+                  <Text style={[styles.sectionTitle, { color: theme.text }]}>Waifus & Husbandos</Text>
+                </View>
+                <View style={[styles.workspaceCountBadge, { backgroundColor: 'rgba(175,82,222,0.12)', borderColor: 'rgba(175,82,222,0.3)', borderWidth: 1 }]}>
+                  <Ionicons name="sparkles" size={12} color="#AF52DE" style={{ marginRight: 4 }} />
+                  <Text style={[styles.workspaceCountText, { color: '#AF52DE', fontWeight: '800' }]}>
+                    {WAIFUS_AND_HUSBANDS.length} Preset
+                  </Text>
+                </View>
+              </View>
+
+              {/* Waifus Row */}
+              <View style={{ marginBottom: 18 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10, paddingHorizontal: 0 }}>
+                  <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#FF375F' }} />
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#FF375F', letterSpacing: 0.8 }}>WAIFUS</Text>
+                  <Text style={{ fontSize: 11, color: theme.secondary, fontWeight: '500' }}>{waifus.length} characters</Text>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 4 }}>
+                  {waifus.map((char: any) => (
+                    <Pressable
+                      key={char.id}
+                      onPress={() => openCharacter(char.id)}
+                      style={({ pressed }) => [styles.waifuCardPressable, pressed && { opacity: 0.88 }]}
+                    >
+                      <LiquidGlassView style={styles.waifuCard} borderRadius={22} intensity={32} elevated>
+                        <View style={styles.waifuImageWrap}>
+                          <DynamicCharacterImage
+                            character={char}
+                            preferCover
+                            style={styles.waifuImage}
+                            contentFit="cover"
+                            contentPosition="top"
+                            transition={200}
+                          />
+                          <LinearGradient
+                            colors={['transparent', 'rgba(0,0,0,0.82)']}
+                            style={StyleSheet.absoluteFill}
+                          />
+                          {/* Gender Badge */}
+                          <View style={[styles.waifuGenderBadge, { backgroundColor: 'rgba(255,55,95,0.88)' }]}>
+                            <Ionicons name="rose" size={10} color="#fff" />
+                            <Text style={styles.waifuGenderText}>WAIFU</Text>
+                          </View>
+                          {/* Admiration score */}
+                          <View style={styles.waifuScoreBadge}>
+                            <Ionicons name="heart" size={9} color="#FF375F" />
+                            <Text style={styles.waifuScoreText}>{char.admirationScore}</Text>
+                          </View>
+                          {/* Name on image */}
+                          <View style={styles.waifuImageOverlay}>
+                            <Text style={styles.waifuCharName} numberOfLines={1}>{char.name}</Text>
+                            <Text style={styles.waifuAppealTitle} numberOfLines={1}>{char.appealTitle}</Text>
+                          </View>
+                        </View>
+                        <View style={styles.waifuCardContent}>
+                          <Text style={[styles.waifuTagline, { color: theme.secondary }]} numberOfLines={2}>
+                            "{char.tagline}"
+                          </Text>
+                          <Pressable
+                            onPress={() => router.push(`/chat/${char.id}`)}
+                            style={[styles.waifuChatBtn, { backgroundColor: '#FF375F' }]}
+                          >
+                            <Ionicons name="chatbubble-ellipses" size={11} color="#fff" style={{ marginRight: 4 }} />
+                            <Text style={styles.waifuChatBtnText}>Chat Now</Text>
+                          </Pressable>
+                        </View>
+                      </LiquidGlassView>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Husbandos Row */}
+              <View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+                  <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#5856D6' }} />
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#5856D6', letterSpacing: 0.8 }}>HUSBANDOS</Text>
+                  <Text style={{ fontSize: 11, color: theme.secondary, fontWeight: '500' }}>{husbandos.length} characters</Text>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingVertical: 4 }}>
+                  {husbandos.map((char: any) => (
+                    <Pressable
+                      key={char.id}
+                      onPress={() => openCharacter(char.id)}
+                      style={({ pressed }) => [styles.waifuCardPressable, pressed && { opacity: 0.88 }]}
+                    >
+                      <LiquidGlassView style={styles.waifuCard} borderRadius={22} intensity={32} elevated>
+                        <View style={styles.waifuImageWrap}>
+                          <DynamicCharacterImage
+                            character={char}
+                            preferCover
+                            style={styles.waifuImage}
+                            contentFit="cover"
+                            contentPosition="top"
+                            transition={200}
+                          />
+                          <LinearGradient
+                            colors={['transparent', 'rgba(0,0,0,0.82)']}
+                            style={StyleSheet.absoluteFill}
+                          />
+                          {/* Gender Badge */}
+                          <View style={[styles.waifuGenderBadge, { backgroundColor: 'rgba(88,86,214,0.88)' }]}>
+                            <Ionicons name="flame" size={10} color="#fff" />
+                            <Text style={styles.waifuGenderText}>HUSBANDO</Text>
+                          </View>
+                          {/* Admiration score */}
+                          <View style={styles.waifuScoreBadge}>
+                            <Ionicons name="star" size={9} color="#FFD60A" />
+                            <Text style={[styles.waifuScoreText, { color: '#FFD60A' }]}>{char.admirationScore}</Text>
+                          </View>
+                          {/* Name on image */}
+                          <View style={styles.waifuImageOverlay}>
+                            <Text style={styles.waifuCharName} numberOfLines={1}>{char.name}</Text>
+                            <Text style={styles.waifuAppealTitle} numberOfLines={1}>{char.appealTitle}</Text>
+                          </View>
+                        </View>
+                        <View style={styles.waifuCardContent}>
+                          <Text style={[styles.waifuTagline, { color: theme.secondary }]} numberOfLines={2}>
+                            "{char.tagline}"
+                          </Text>
+                          <Pressable
+                            onPress={() => router.push(`/chat/${char.id}`)}
+                            style={[styles.waifuChatBtn, { backgroundColor: '#5856D6' }]}
+                          >
+                            <Ionicons name="chatbubble-ellipses" size={11} color="#fff" style={{ marginRight: 4 }} />
+                            <Text style={styles.waifuChatBtnText}>Chat Now</Text>
+                          </Pressable>
+                        </View>
+                      </LiquidGlassView>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+          );
+        })()}
+
+        {/* ============================================================ */}
         {/* 3. RIVAL ENCOUNTERS & SUGGESTIONS                            */}
         {/* ============================================================ */}
         {/* ============================================================ */}
         {/* 3. RIVAL ENCOUNTERS (HIGH-VOLTAGE VS CLASH DESIGN)           */}
         {/* ============================================================ */}
         {(rivalRelations.length > 0 || isFetchingRivals) && (
+
           <View style={styles.rivalsSection}>
             <View style={styles.sectionHeader}>
               <View>
@@ -2232,12 +2370,7 @@ export default function DiscoverScreen() {
         userName={user?.name || user?.username || 'there'}
       />
 
-      <UpdateAvailableModal
-        visible={showUpdateModal}
-        onClose={() => setShowUpdateModal(false)}
-        versionInfo={updateInfo}
-        currentVersion={Constants.expoConfig?.version || '1.0.0'}
-      />
+
     </SafeAreaView>
   </View>
   );
@@ -3397,4 +3530,107 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '700',
   },
+
+  // ─── Anime Waifus & Husbandos Section ─────────────────────────────────────
+  waifuSection: {
+    marginBottom: 26,
+  },
+  waifuCardPressable: {
+    // pressable wrapper
+  },
+  waifuCard: {
+    width: 168,
+    overflow: 'hidden',
+  },
+  waifuImageWrap: {
+    width: '100%',
+    height: 220,
+    position: 'relative',
+    backgroundColor: 'rgba(0,0,0,0.1)',
+  },
+  waifuImage: {
+    width: '100%',
+    height: '100%',
+  },
+  waifuGenderBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3.5,
+    borderRadius: 8,
+  },
+  waifuGenderText: {
+    color: '#fff',
+    fontSize: 8.5,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  waifuScoreBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3.5,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+  },
+  waifuScoreText: {
+    color: '#FF375F',
+    fontSize: 8.5,
+    fontWeight: '800',
+  },
+  waifuImageOverlay: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    right: 10,
+  },
+  waifuCharName: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  waifuAppealTitle: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 1,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  waifuCardContent: {
+    padding: 11,
+    paddingTop: 9,
+  },
+  waifuTagline: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    lineHeight: 15,
+    marginBottom: 9,
+  },
+  waifuChatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    borderRadius: 11,
+  },
+  waifuChatBtnText: {
+    color: '#fff',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
 });
+

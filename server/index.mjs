@@ -135,7 +135,7 @@ async function callAzureOpenAI({ deployment = defaultDeployment, messages, maxTo
 }
 
 // Real Character Image Search from Web (Google / Bing / Zerochan / DuckDuckGo / Anime CDNs)
-async function fetchCharacterImage(name, series = '') {
+async function fetchCharacterImage(name, series = '', force = false) {
   const cleanName = (name || '').trim();
   const cleanSeries = (series || '').trim();
 
@@ -176,6 +176,7 @@ async function fetchCharacterImage(name, series = '') {
     const html = await res.text();
     const matches = [...html.matchAll(/murl&quot;:&quot;(https?:[^\&"]+)&quot;/g)];
     if (matches.length > 0) {
+      const validMatches = [];
       for (const m of matches) {
         const decoded = decodeURIComponent(m[1]);
         if (
@@ -186,8 +187,14 @@ async function fetchCharacterImage(name, series = '') {
           !decoded.includes('icon') &&
           !decoded.includes('logo')
         ) {
-          return decoded;
+          validMatches.push(decoded);
         }
+      }
+      if (validMatches.length > 0) {
+        if (force) {
+          return validMatches[Math.floor(Math.random() * Math.min(validMatches.length, 8))];
+        }
+        return validMatches[0];
       }
       return decodeURIComponent(matches[0][1]);
     }
@@ -472,7 +479,7 @@ const server = http.createServer(async (request, response) => {
         }
       }
 
-      const fetchedUrl = await fetchCharacterImage(name, series);
+      const fetchedUrl = await fetchCharacterImage(name, series, force);
       if (fetchedUrl) {
         characterImageCache.set(key, fetchedUrl);
         await cachedImagesCol.updateOne(

@@ -209,11 +209,12 @@ export function NotificationsModal({
 }: NotificationsModalProps) {
   const router = useRouter();
   const { theme, isDark } = useTheme();
-  const [filter, setFilter] = useState<'all' | 'companions' | 'updates'>('all');
+  const [filter, setFilter] = useState<'all' | 'companions'>('all');
 
   const filteredList = notifications.filter((item) => {
     if (filter === 'companions') return item.type === 'companion_reminder';
-    if (filter === 'updates') return item.type === 'app_update';
+    // Never show app_update notifications in this list (moved to Profile screen)
+    if (item.type === 'app_update') return false;
     return true;
   });
 
@@ -306,7 +307,6 @@ export function NotificationsModal({
             {[
               { key: 'all', label: 'All', icon: 'grid-outline' },
               { key: 'companions', label: 'Companions', icon: 'heart-outline' },
-              { key: 'updates', label: 'App Updates', icon: 'sparkles-outline' },
             ].map((tab) => {
               const active = filter === tab.key;
               return (

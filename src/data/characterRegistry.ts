@@ -44,7 +44,12 @@ export function getAllBuiltinCharacters(): Character[] {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { getAllPresets } = require('./rivals') as { getAllPresets: () => Character[] };
     const presets = getAllPresets().filter((p) => !staticChars.some((c) => c.id === p.id));
-    _allBuiltinCharacters = staticChars.concat(presets);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { WAIFUS_AND_HUSBANDS } = require('./waifusAndHusbands') as { WAIFUS_AND_HUSBANDS: Character[] };
+    const waifusList = WAIFUS_AND_HUSBANDS.filter(
+      (w) => !staticChars.some((c) => c.id === w.id) && !presets.some((p) => p.id === w.id)
+    );
+    _allBuiltinCharacters = staticChars.concat(presets, waifusList);
   }
   return _allBuiltinCharacters;
 }
