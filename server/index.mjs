@@ -1573,6 +1573,26 @@ const server = http.createServer(async (request, response) => {
       }
     }
 
+    // ----------------------------------------------------------------------
+    // 13. APP VERSION CHECK & IN-APP UPDATE NOTIFICATION
+    // ----------------------------------------------------------------------
+    if (request.method === 'GET' && pathname === '/app/version') {
+      return sendJson(response, 200, {
+        latestVersion: process.env.APP_LATEST_VERSION || '1.0.1',
+        latestVersionCode: Number(process.env.APP_LATEST_VERSION_CODE || 2),
+        apkUrl: process.env.APP_APK_URL || 'https://expo.dev/accounts/samjoshua2002/projects/guildtalk/builds',
+        title: 'New GuideTalk Update Available! 🚀',
+        message: 'GuideTalk v1.0.1 is here with hourly companion push reminders, live character check-ins, geometric origami app icon, and global cloud sync.',
+        releaseNotes: [
+          'Hourly push check-ins from your favorite companions with your real name',
+          'New in-app Notification Center in Discover tab',
+          'Vibrant new geometric cat app icon',
+          'Global cloud sync with MongoDB Atlas on Render',
+        ],
+        forceUpdate: false,
+      });
+    }
+
     // Default 404
     return sendJson(response, 404, { error: `Endpoint not found: ${request.method} ${pathname}` });
   } catch (error) {

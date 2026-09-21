@@ -1,10 +1,11 @@
 {
   "expo": {
-    "name": "GuildTalk",
-    "slug": "guildtalk",
-    "version": "1.0.0",
+    "name": "GuideTalk",
+    "slug": "guidetalk",
+    "version": "1.0.1",
     "orientation": "portrait",
-    "scheme": "guildtalk",
+    "scheme": "guidetalk",
+    "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "plugins": [
@@ -13,13 +14,19 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.samjoshua2002.guildtalk"
+      "bundleIdentifier": "com.samjoshua2002.guidetalk",
+      "icon": "./assets/images/icon.png"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#100D1D"
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#F4CD2A"
       },
-      "package": "com.samjoshua2002.guildtalk"
+      "package": "com.samjoshua2002.guidetalk",
+      "versionCode": 2
+    },
+    "web": {
+      "favicon": "./assets/images/favicon.png"
     },
     "extra": {
       "router": {},

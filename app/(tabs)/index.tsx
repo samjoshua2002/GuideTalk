@@ -22,13 +22,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/src/context/ThemeContext';
 import { useAuth } from '@/src/context/AuthContext';
 import { getAllBuiltinCharacters, registerCustomCharacter } from '@/src/data/characters';
+import Constants from 'expo-constants';
 import { getAllPresets, CATEGORY_PRESETS, UniverseCategory, RivalRelation, getRivalsForWorkspace } from '@/src/data/rivals';
 import { Character } from '@/src/types/character';
-import { fetchCharacters, listConversations, ConversationSummary, fetchRecommendations, fetchDynamicRivals } from '@/src/lib/chatApi';
+import { fetchCharacters, listConversations, ConversationSummary, fetchRecommendations, fetchDynamicRivals, fetchAppVersion, AppVersionInfo } from '@/src/lib/chatApi';
 import { LiquidGlassView } from '@/src/components/LiquidGlassView';
 import { GlowButton } from '@/src/components/GlowButton';
 import { AuthModal } from '@/src/components/AuthModal';
 import { NotificationsModal } from '@/src/components/NotificationsModal';
+import { UpdateAvailableModal } from '@/src/components/UpdateAvailableModal';
 import { OnboardingStoryboard } from '@/src/components/OnboardingStoryboard';
 import { triggerHaptic } from '@/src/lib/haptics';
 import {
@@ -258,6 +260,20 @@ export default function DiscoverScreen() {
   const [favoriteCharacters, setFavoriteCharacters] = useState<Character[]>([]);
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [notificationsList, setNotificationsList] = useState<InAppNotification[]>([]);
+  const [updateInfo, setUpdateInfo] = useState<AppVersionInfo | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+
+  useEffect(() => {
+    fetchAppVersion().then((info) => {
+      if (!info) return;
+      const currentVer = Constants.expoConfig?.version || '1.0.0';
+      const currentCode = (Constants.expoConfig as any)?.android?.versionCode || 1;
+      if (info.latestVersionCode > currentCode || info.latestVersion !== currentVer) {
+        setUpdateInfo(info);
+        setShowUpdateModal(true);
+      }
+    });
+  }, []);
 
   const loadFavorites = useCallback(async () => {
     try {
@@ -2186,6 +2202,13 @@ export default function DiscoverScreen() {
             prev.map((n) => (n.id === notif.id ? { ...n, unread: false } : n))
           );
         }}
+      />
+
+      <UpdateAvailableModal
+        visible={showUpdateModal}
+        onClose={() => setShowUpdateModal(false)}
+        versionInfo={updateInfo}
+        currentVersion={Constants.expoConfig?.version || '1.0.0'}
       />
     </SafeAreaView>
   </View>

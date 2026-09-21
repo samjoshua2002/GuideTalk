@@ -824,3 +824,26 @@ export async function fetchDynamicCharacterImage(
   return null;
 }
 
+// ----------------------------------------------------------------------
+// 8. APP VERSION CHECK
+// ----------------------------------------------------------------------
+
+export interface AppVersionInfo {
+  latestVersion: string;
+  latestVersionCode: number;
+  apkUrl: string;
+  title: string;
+  message: string;
+  releaseNotes: string[];
+  forceUpdate: boolean;
+}
+
+export async function fetchAppVersion(): Promise<AppVersionInfo | null> {
+  try {
+    const res = await apiFetch('/app/version', { method: 'GET' }, 4000);
+    return await parseResponse<AppVersionInfo>(res);
+  } catch {
+    return null;
+  }
+}
+

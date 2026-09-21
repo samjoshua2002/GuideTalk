@@ -1,6 +1,6 @@
 {
-  "name": "guildtalk",
-  "version": "1.0.0",
+  "name": "guidetalk",
+  "version": "1.0.1",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
