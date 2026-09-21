@@ -12,6 +12,7 @@ import {
   Animated,
   RefreshControl,
   Easing,
+  AppState,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import * as SecureStore from 'expo-secure-store';
@@ -38,6 +39,8 @@ import {
   scheduleHourlyCompanionReminder,
   markNotificationAsRead,
   markAllNotificationsAsRead,
+  dismissNotification,
+  clearAllNotifications,
   InAppNotification,
 } from '@/src/lib/notificationService';
 import { getHiddenRecentIds, subscribeToFavorites, getFavoriteIds } from '@/src/lib/favorites';
@@ -306,6 +309,16 @@ export default function DiscoverScreen() {
       setNotificationsList(notifs);
       scheduleHourlyCompanionReminder(activeChars, currentName);
     });
+
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        scheduleHourlyCompanionReminder(activeChars, currentName);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, [favoriteCharacters, activityList, user]);
 
   const loadActivity = async () => {
@@ -2196,12 +2209,21 @@ export default function DiscoverScreen() {
           await markAllNotificationsAsRead(notificationsList.map((n) => n.id));
           setNotificationsList((prev) => prev.map((n) => ({ ...n, unread: false })));
         }}
+        onClearAll={async () => {
+          await clearAllNotifications(notificationsList.map((n) => n.id));
+          setNotificationsList([]);
+        }}
+        onDismissNotification={async (id) => {
+          await dismissNotification(id);
+          setNotificationsList((prev) => prev.filter((n) => n.id !== id));
+        }}
         onSelectNotification={async (notif) => {
           await markNotificationAsRead(notif.id);
           setNotificationsList((prev) =>
             prev.map((n) => (n.id === notif.id ? { ...n, unread: false } : n))
           );
         }}
+        userName={user?.name || user?.username || 'there'}
       />
 
       <UpdateAvailableModal

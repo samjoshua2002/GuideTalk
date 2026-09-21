@@ -37,24 +37,37 @@ const READ_NOTIFS_KEY = 'guildtalk_read_notifications_v1';
 export async function requestNotificationPermission(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
   try {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-    if (finalStatus === 'granted' && Platform.OS === 'android') {
+    // Setup Android notification channels immediately
+    if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('companion-reminders', {
         name: 'Companion Reminders',
-        importance: Notifications.AndroidImportance.HIGH,
+        importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#6C47FF',
+        lightColor: '#F4CD2A',
+        enableVibrate: true,
+        showBadge: true,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        sound: 'default',
       });
       await Notifications.setNotificationChannelAsync('app-updates', {
         name: 'App Updates & News',
         importance: Notifications.AndroidImportance.DEFAULT,
-        lightColor: '#6C47FF',
+        lightColor: '#F4CD2A',
+        sound: 'default',
       });
+    }
+
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync({
+        ios: {
+          allowAlert: true,
+          allowBadge: true,
+          allowSound: true,
+        },
+      });
+      finalStatus = status;
     }
     return finalStatus === 'granted';
   } catch (err) {
@@ -117,7 +130,7 @@ export function getCharacterReminderMessage(charName: string, userName: string):
 }
 
 // ----------------------------------------------------------------------
-// 3. SCHEDULE 1-HOUR RECURRING PUSH NOTIFICATION
+// 3. SCHEDULE 1-HOUR RECURRING PUSH NOTIFICATION + TEST REMINDER
 // ----------------------------------------------------------------------
 
 export async function scheduleHourlyCompanionReminder(
@@ -136,6 +149,7 @@ export async function scheduleHourlyCompanionReminder(
     const char = characters[Math.floor(Math.random() * characters.length)];
     const message = getCharacterReminderMessage(char.name, userName);
 
+    // 1. Initial reminder in 15 seconds so user can see it right after closing/backgrounding app
     await Notifications.scheduleNotificationAsync({
       content: {
         title: `${char.name} misses you!`,
@@ -146,6 +160,32 @@ export async function scheduleHourlyCompanionReminder(
           characterName: char.name,
         },
         sound: true,
+        priority: Notifications.AndroidNotificationPriority.MAX,
+        vibrate: [0, 250, 250, 250],
+        color: '#F4CD2A',
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 15,
+        repeats: false,
+        channelId: 'companion-reminders',
+      },
+    });
+
+    // 2. Continuous 1-hour repeating reminder for long-term engagement
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `${char.name} is checking in`,
+        body: message,
+        data: {
+          type: 'character_chat',
+          characterId: char.id,
+          characterName: char.name,
+        },
+        sound: true,
+        priority: Notifications.AndroidNotificationPriority.MAX,
+        vibrate: [0, 250, 250, 250],
+        color: '#F4CD2A',
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
@@ -156,6 +196,50 @@ export async function scheduleHourlyCompanionReminder(
     });
   } catch (err) {
     console.log('Error scheduling notification:', err);
+  }
+}
+
+/**
+ * Fires an Android push notification in 5 seconds so the user can immediately test
+ * lockscreen / status bar notifications when closing or minimizing the app.
+ */
+export async function sendInstantTestNotification(
+  characterName: string = 'Gojo Satoru',
+  characterId: string = 'char-gojo-1',
+  userName: string = 'friend'
+): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
+  try {
+    const hasPerm = await requestNotificationPermission();
+    if (!hasPerm) return false;
+
+    const message = getCharacterReminderMessage(characterName, userName);
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `${characterName} misses you!`,
+        body: message,
+        data: {
+          type: 'character_chat',
+          characterId,
+          characterName,
+        },
+        sound: true,
+        priority: Notifications.AndroidNotificationPriority.MAX,
+        vibrate: [0, 250, 250, 250],
+        color: '#F4CD2A',
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 5,
+        repeats: false,
+        channelId: 'companion-reminders',
+      },
+    });
+    return true;
+  } catch (err) {
+    console.log('Error sending instant test notification:', err);
+    return false;
   }
 }
 
@@ -203,6 +287,48 @@ export async function markAllNotificationsAsRead(ids: string[]): Promise<void> {
   } catch {}
 }
 
+const DISMISSED_NOTIFS_KEY = 'guidetalk_dismissed_notifications_v1';
+
+export async function getDismissedNotificationIds(): Promise<string[]> {
+  try {
+    if (Platform.OS === 'web') {
+      const raw = globalThis.localStorage?.getItem(DISMISSED_NOTIFS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    }
+    const raw = await SecureStore.getItemAsync(DISMISSED_NOTIFS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function dismissNotification(id: string): Promise<void> {
+  try {
+    const list = await getDismissedNotificationIds();
+    if (!list.includes(id)) {
+      const updated = [...list, id];
+      if (Platform.OS === 'web') {
+        globalThis.localStorage?.setItem(DISMISSED_NOTIFS_KEY, JSON.stringify(updated));
+      } else {
+        await SecureStore.setItemAsync(DISMISSED_NOTIFS_KEY, JSON.stringify(updated));
+      }
+    }
+  } catch {}
+}
+
+export async function clearAllNotifications(ids: string[]): Promise<void> {
+  try {
+    const list = await getDismissedNotificationIds();
+    const set = new Set([...list, ...ids]);
+    const updated = Array.from(set);
+    if (Platform.OS === 'web') {
+      globalThis.localStorage?.setItem(DISMISSED_NOTIFS_KEY, JSON.stringify(updated));
+    } else {
+      await SecureStore.setItemAsync(DISMISSED_NOTIFS_KEY, JSON.stringify(updated));
+    }
+  } catch {}
+}
+
 // ----------------------------------------------------------------------
 // 5. IN-APP NOTIFICATION FEED GENERATOR
 // ----------------------------------------------------------------------
@@ -211,14 +337,19 @@ export async function getInAppNotifications(
   likedCharacters: Character[],
   userName: string = 'friend'
 ): Promise<InAppNotification[]> {
-  const readIds = await getReadNotificationIds();
+  const [readIds, dismissedIds] = await Promise.all([
+    getReadNotificationIds(),
+    getDismissedNotificationIds(),
+  ]);
   const readSet = new Set(readIds);
+  const dismissedSet = new Set(dismissedIds);
 
   const notifications: InAppNotification[] = [];
 
   // 1. Liked Character Reminders
   likedCharacters.forEach((char, idx) => {
     const notifId = `char-reminder-${char.id}`;
+    if (dismissedSet.has(notifId)) return;
     const times = ['15m ago', '1h ago', '3h ago', '5h ago', 'yesterday'];
     const timeAgo = times[idx % times.length];
     const message = getCharacterReminderMessage(char.name, userName);
@@ -282,7 +413,8 @@ export async function getInAppNotifications(
     },
   ];
 
-  notifications.push(...appUpdates);
+  const activeUpdates = appUpdates.filter((u) => !dismissedSet.has(u.id));
+  notifications.push(...activeUpdates);
 
   // Sort by timestamp descending
   return notifications.sort((a, b) => b.timestamp - a.timestamp);
