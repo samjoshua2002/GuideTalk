@@ -122,14 +122,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const urls = Array.from(new Set([
       `${env.apiUrl}${path}`,
       `http://192.168.0.232:3000${path}`,
+      Platform.OS === 'android' ? `http://10.0.2.2:3000${path}` : null,
       `http://localhost:3000${path}`,
-    ]));
+    ])).filter((u): u is string => !!u);
+
     let lastError: unknown = null;
     for (const url of urls) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 2200);
       try {
-        const res = await fetch(url, options);
+        const res = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(timer);
         return res;
       } catch (e) {
+        clearTimeout(timer);
         lastError = e;
       }
     }

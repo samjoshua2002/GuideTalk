@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { env } from '@/src/config/env';
 import { Character } from '@/src/types/character';
 
@@ -36,22 +37,114 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return payload as T;
 }
 
-async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  const urls = Array.from(new Set([
-    `${env.apiUrl}${path}`,
-    `http://192.168.0.232:3000${path}`,
-    `http://localhost:3000${path}`,
-  ]));
-  let lastError: any = null;
-  for (const url of urls) {
+let cachedWorkingBaseUrl: string | null = null;
+let probePromise: Promise<string | null> | null = null;
+let lastProbeFailTime = 0;
+const PROBE_COOLDOWN_MS = 25000;
+let hasLoggedRecsOffline = false;
+let hasLoggedRivalsOffline = false;
+
+function getEndpointTimeout(path: string, customTimeout?: number): number {
+  if (typeof customTimeout === 'number' && customTimeout > 0) return customTimeout;
+  if (
+    path.includes('/recommendations') ||
+    path.includes('/dynamic-rivals') ||
+    path.includes('/chat') ||
+    path.includes('/generate') ||
+    path.includes('/search-or-create') ||
+    path.includes('/search-multi') ||
+    path.includes('/daily-prophecy')
+  ) {
+    return 25000; // 25s for AI generative and web image lookups
+  }
+  return 5000; // 5s for standard database and auth operations
+}
+
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 4000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return res;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function findWorkingBaseUrl(): Promise<string | null> {
+  if (cachedWorkingBaseUrl) return cachedWorkingBaseUrl;
+  if (Date.now() - lastProbeFailTime < PROBE_COOLDOWN_MS) {
+    return null;
+  }
+  if (probePromise) return probePromise;
+
+  probePromise = (async () => {
+    const candidateBases = [
+      env.apiUrl,
+      'http://192.168.0.232:3000',
+      Platform.OS === 'android' ? 'http://10.0.2.2:3000' : null,
+      'http://localhost:3000',
+    ].filter((b): b is string => !!b && typeof b === 'string');
+
+    const uniqueBases = Array.from(new Set(candidateBases));
+
+    const check = async (base: string): Promise<string | null> => {
+      const clean = base.replace(/\/$/, '');
+      try {
+        const res = await fetchWithTimeout(`${clean}/characters`, { method: 'GET' }, 1800);
+        if (res.ok || res.status === 404 || res.status === 401) {
+          return clean;
+        }
+      } catch {
+        // unreachable
+      }
+      return null;
+    };
+
     try {
-      const res = await fetch(url, options);
-      return res;
+      const results = await Promise.all(uniqueBases.map(check));
+      const found = results.find((r): r is string => !!r);
+      if (found) {
+        cachedWorkingBaseUrl = found;
+        hasLoggedRecsOffline = false;
+        hasLoggedRivalsOffline = false;
+        return found;
+      }
+      lastProbeFailTime = Date.now();
+    } finally {
+      probePromise = null;
+    }
+    return null;
+  })();
+
+  return probePromise;
+}
+
+async function apiFetch(path: string, options: RequestInit = {}, customTimeout?: number): Promise<Response> {
+  const timeoutMs = getEndpointTimeout(path, customTimeout);
+
+  // 1. If we already know the working base, use it directly with full AI timeout
+  if (cachedWorkingBaseUrl) {
+    const fullUrl = `${cachedWorkingBaseUrl}${path}`;
+    try {
+      return await fetchWithTimeout(fullUrl, options, timeoutMs);
     } catch (e) {
-      lastError = e;
+      cachedWorkingBaseUrl = null;
     }
   }
-  throw lastError || new Error('Network request failed.');
+
+  // 2. Discover working server URL in parallel with 1.8s probe
+  const workingBase = await findWorkingBaseUrl();
+  if (workingBase) {
+    const fullUrl = `${workingBase}${path}`;
+    return await fetchWithTimeout(fullUrl, options, timeoutMs);
+  }
+
+  // 3. If no working base was found, do not hang for 15s on an unreachable host
+  throw new Error('Backend server is unreachable on this network');
 }
 
 // ----------------------------------------------------------------------
@@ -381,6 +474,7 @@ async function directAzureChat({
 // ----------------------------------------------------------------------
 
 export interface CharacterCandidate {
+  id?: string;
   name: string;
   series: string;
   role: string;
@@ -390,6 +484,10 @@ export interface CharacterCandidate {
   greeting: string;
   avatarUrl: string;
   coverUrl: string;
+  roleplayRules?: string;
+  starters?: string[];
+  accent?: string;
+  isCustom?: boolean;
 }
 
 export async function searchMultiCharacters(
@@ -400,13 +498,116 @@ export async function searchMultiCharacters(
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await apiFetch('/characters/search-multi', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ query, language }),
-  });
-  const data = await parseResponse<{ candidates: CharacterCandidate[] }>(res);
-  return data.candidates || [];
+  try {
+    const res = await apiFetch(
+      '/characters/search-multi',
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ query, language }),
+      },
+      25000
+    );
+    const data = await parseResponse<{ candidates: CharacterCandidate[] }>(res);
+    if (data.candidates && data.candidates.length > 0) {
+      return data.candidates;
+    }
+  } catch (err) {
+    console.log('Server /characters/search-multi unreachable or timed out, trying direct fallback:', err);
+  }
+
+  // Resilient fallback: Direct Azure OpenAI or smart instant persona
+  return directAzureSearchCandidates(query, language);
+}
+
+async function directAzureSearchCandidates(
+  query: string,
+  language?: string
+): Promise<CharacterCandidate[]> {
+  const cleanQ = query.trim();
+  if (!cleanQ) return [];
+
+  if (env.azureApiKey && env.azureEndpoint) {
+    try {
+      const prompt = [
+        `The user is searching for character or figure: "${cleanQ}". Preferred language/region: ${language || 'any'}.`,
+        `Generate 3 distinct versions, iconic movie roles, or forms of this character/person.`,
+        `Return ONLY a pure JSON array containing exactly 3 objects with keys:`,
+        `[{"name": "...", "series": "...", "role": "...", "shortDescription": "...", "personality": ["..."], "greeting": "..."}]`,
+      ].join('\n');
+
+      const targetModel = env.azureDefaultDeployment || 'gpt-5.6-luna';
+      const url = `${env.azureEndpoint}openai/deployments/${encodeURIComponent(targetModel)}/chat/completions?api-version=${env.azureApiVersion}`;
+      const response = await fetchWithTimeout(
+        url,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'api-key': env.azureApiKey,
+          },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: prompt }],
+            max_completion_tokens: 800,
+          }),
+        },
+        12000
+      );
+
+      if (response.ok) {
+        const raw = await response.json();
+        const content = raw?.choices?.[0]?.message?.content || '';
+        const cleaned = content.trim().replace(/^```json/, '').replace(/```$/, '').trim();
+        let parsed = JSON.parse(cleaned);
+        if (!Array.isArray(parsed)) parsed = [parsed];
+
+        const defaultAvatars = [
+          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&q=80',
+          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&q=80',
+          'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=500&q=80',
+        ];
+
+        return parsed.slice(0, 3).map((c: any, idx: number) => ({
+          id: `candidate-${Date.now()}-${idx}`,
+          name: c.name || cleanQ,
+          series: c.series || 'Famous Universe',
+          role: c.role || 'Companion',
+          shortDescription: c.shortDescription || '',
+          description: c.shortDescription || '',
+          personality: Array.isArray(c.personality) ? c.personality : ['Smart', 'Charismatic'],
+          roleplayRules: 'Speak in-character with genuine charm, emotion, and wit.',
+          greeting: c.greeting || `Hello! I am ${c.name || cleanQ}.`,
+          starters: ['Tell me about your world.', 'What is your greatest adventure?'],
+          avatarUrl: defaultAvatars[idx % defaultAvatars.length],
+          coverUrl: defaultAvatars[idx % defaultAvatars.length],
+          accent: '#FFFFFF',
+          isCustom: true,
+        }));
+      }
+    } catch (e) {
+      console.log('Direct Azure candidate search failed, using instant persona:', e);
+    }
+  }
+
+  // Guaranteed instant persona so the user is never stuck
+  return [
+    {
+      id: `candidate-${Date.now()}-0`,
+      name: cleanQ,
+      series: 'Famous Universe',
+      role: 'Iconic Persona',
+      shortDescription: `Custom character persona for ${cleanQ}`,
+      description: `A legendary character known as ${cleanQ}. Ready to chat with sharp wit, charm, and authenticity.`,
+      personality: ['Charismatic', 'Sharp', 'Authentic'],
+      roleplayRules: 'Speak in-character with genuine charm and wit.',
+      greeting: `Greetings! I am ${cleanQ}. What shall we explore together?`,
+      starters: ['Tell me about yourself.', 'What is your greatest battle?'],
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&q=80',
+      coverUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&q=80',
+      accent: '#FFFFFF',
+      isCustom: true,
+    },
+  ];
 }
 
 // ----------------------------------------------------------------------
@@ -454,7 +655,7 @@ export async function editMessageAndRegenerate({
 
 // ----------------------------------------------------------------------
 // 6. AI CHARACTER RECOMMENDATIONS
-// ----------------------------------------------------------------------
+let activeRecsPromise: Promise<Character[]> | null = null;
 
 export async function fetchRecommendations({
   recentSearches,
@@ -471,32 +672,47 @@ export async function fetchRecommendations({
   forceRefresh?: boolean;
   token?: string | null;
 }): Promise<Character[]> {
+  if (activeRecsPromise && !forceRefresh) {
+    return activeRecsPromise;
+  }
+
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  try {
-    const res = await apiFetch('/characters/recommendations', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        recentSearches,
-        talkedCharacterNames,
-        workspaceNames,
-        language,
-        forceRefresh,
-      }),
-    });
-    const data = await parseResponse<{ recommendations: Character[] }>(res);
-    return data.recommendations || [];
-  } catch (err) {
-    console.warn('Failed to fetch recommendations:', err);
-    return [];
-  }
+  activeRecsPromise = (async () => {
+    try {
+      const res = await apiFetch('/characters/recommendations', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          recentSearches,
+          talkedCharacterNames,
+          workspaceNames,
+          language,
+          forceRefresh,
+        }),
+      });
+      const data = await parseResponse<{ recommendations: Character[] }>(res);
+      return data.recommendations || [];
+    } catch (err) {
+      if (!hasLoggedRecsOffline) {
+        hasLoggedRecsOffline = true;
+        console.log('AI recommendations offline, using curated presets');
+      }
+      return [];
+    } finally {
+      activeRecsPromise = null;
+    }
+  })();
+
+  return activeRecsPromise;
 }
 
 // ----------------------------------------------------------------------
 // 6b. DYNAMIC AI & INTERNET RIVAL ENCOUNTERS
 // ----------------------------------------------------------------------
+
+let activeRivalsPromise: Promise<any[]> | null = null;
 
 export async function fetchDynamicRivals({
   characters,
@@ -509,25 +725,38 @@ export async function fetchDynamicRivals({
   forceRefresh?: boolean;
   token?: string | null;
 }): Promise<any[]> {
+  if (activeRivalsPromise && !forceRefresh) {
+    return activeRivalsPromise;
+  }
+
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  try {
-    const res = await apiFetch('/characters/dynamic-rivals', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        characters,
-        recentSearches,
-        forceRefresh,
-      }),
-    });
-    const data = await parseResponse<{ rivals: any[] }>(res);
-    return data.rivals || [];
-  } catch (err) {
-    console.warn('Failed to fetch dynamic rivals:', err);
-    return [];
-  }
+  activeRivalsPromise = (async () => {
+    try {
+      const res = await apiFetch('/characters/dynamic-rivals', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          characters,
+          recentSearches,
+          forceRefresh,
+        }),
+      });
+      const data = await parseResponse<{ rivals: any[] }>(res);
+      return data.rivals || [];
+    } catch (err) {
+      if (!hasLoggedRivalsOffline) {
+        hasLoggedRivalsOffline = true;
+        console.log('AI dynamic rivals offline, using preset rivals');
+      }
+      return [];
+    } finally {
+      activeRivalsPromise = null;
+    }
+  })();
+
+  return activeRivalsPromise;
 }
 
 // ----------------------------------------------------------------------
@@ -587,8 +816,8 @@ export async function fetchDynamicCharacterImage(
       const data = await parseResponse<{ imageUrl?: string }>(res);
       return data?.imageUrl || null;
     }
-  } catch (err) {
-    console.warn(`Failed to fetch dynamic image for ${name}:`, err);
+  } catch {
+    // Fallback gracefully to built-in avatar/cover art when offline
   }
   return null;
 }

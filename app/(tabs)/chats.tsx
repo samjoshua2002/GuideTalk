@@ -124,6 +124,16 @@ export default function ChatsScreen() {
     return `https://api.dicebear.com/9.x/adventurer/png?seed=${encodeURIComponent(item.characterName)}&backgroundColor=000000`;
   }, []);
 
+  const renderConversationItem = useCallback(({ item }: { item: ConversationSummary }) => (
+    <ConversationRow
+      item={item}
+      avatarUri={getAvatar(item)}
+      textColor={theme.text}
+      secondaryColor={theme.secondary}
+      onPress={() => router.push(`/chat/${item.characterId}`)}
+    />
+  ), [getAvatar, theme.text, theme.secondary, router]);
+
   const groupedConversations = React.useMemo(() => {
     const map = new Map<string, ConversationSummary>();
     for (const c of conversations) {
@@ -175,15 +185,7 @@ export default function ChatsScreen() {
           data={groupedConversations}
           keyExtractor={(item) => item.characterId || item.id}
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <ConversationRow
-              item={item}
-              avatarUri={getAvatar(item)}
-              textColor={theme.text}
-              secondaryColor={theme.secondary}
-              onPress={() => router.push(`/chat/${item.characterId}`)}
-            />
-          )}
+          renderItem={renderConversationItem}
         />
       )}
     </SafeAreaView>

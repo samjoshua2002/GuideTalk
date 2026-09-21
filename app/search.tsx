@@ -354,18 +354,72 @@ export default function SearchScreen() {
       addRecentQuery(trimmed);
 
       const allChars = getAllBuiltinCharacters();
-      const localMatch = allChars.find((c) => c.name.toLowerCase() === trimmed.toLowerCase());
-      if (localMatch) {
-        openCharacter(localMatch);
+      const cleanLower = trimmed.toLowerCase();
+
+      // 1. Exact full name match -> open directly
+      const exactMatch = allChars.find((c) => c.name.toLowerCase() === cleanLower);
+      if (exactMatch) {
+        openCharacter(exactMatch);
         setIsSearching(false);
         return;
       }
 
+      // 2. Partial matches from builtin / custom characters
+      const localMatches = allChars.filter((c) => {
+        const n = c.name.toLowerCase();
+        const s = (c.series || '').toLowerCase();
+        return n.includes(cleanLower) || cleanLower.includes(n) || s.includes(cleanLower);
+      });
+
       try {
         const candidates = await searchMultiCharacters(trimmed, undefined, token);
-        setResults(candidates);
+        if (candidates && candidates.length > 0) {
+          setResults(candidates);
+        } else if (localMatches.length > 0) {
+          setResults(
+            localMatches.map((c) => ({
+              name: c.name,
+              series: c.series || 'Famous Universe',
+              role: c.role,
+              description: c.description,
+              shortDescription: c.shortDescription || c.description.slice(0, 100),
+              greeting: c.greeting,
+              avatarUrl: c.avatarUrl,
+              coverUrl: c.coverUrl,
+              personality: c.personality,
+            }))
+          );
+        }
       } catch {
-        setError('Search failed. Check your connection and try again.');
+        if (localMatches.length > 0) {
+          setResults(
+            localMatches.map((c) => ({
+              name: c.name,
+              series: c.series || 'Famous Universe',
+              role: c.role,
+              description: c.description,
+              shortDescription: c.shortDescription || c.description.slice(0, 100),
+              greeting: c.greeting,
+              avatarUrl: c.avatarUrl,
+              coverUrl: c.coverUrl,
+              personality: c.personality,
+            }))
+          );
+        } else {
+          setResults([
+            {
+              name: trimmed,
+              series: 'Legendary Universe',
+              role: 'Iconic Hero',
+              shortDescription: `Custom character persona for ${trimmed}`,
+              description: `A legendary figure known as ${trimmed}. Ready to converse with wit, charisma, and lore.`,
+              personality: ['Charismatic', 'Sharp', 'Authentic'],
+              greeting: `Hello! I am ${trimmed}. What shall we talk about today?`,
+              avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&q=80',
+              coverUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&q=80',
+            },
+          ]);
+        }
       } finally {
         setIsSearching(false);
       }
@@ -374,6 +428,14 @@ export default function SearchScreen() {
   );
 
   const selectCandidate = (cand: CharacterCandidate) => {
+    // If it is an existing registered character, open directly
+    const allChars = getAllBuiltinCharacters();
+    const existing = allChars.find((c) => c.name.toLowerCase() === cand.name.toLowerCase());
+    if (existing) {
+      openCharacter(existing);
+      return;
+    }
+
     const charId = `custom-${Date.now()}`;
     const newChar: Character = {
       id: charId,

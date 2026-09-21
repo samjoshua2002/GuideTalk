@@ -793,6 +793,39 @@ const server = http.createServer(async (request, response) => {
     }
 
     // ----------------------------------------------------------------------
+    // 2b-2. DYNAMIC GUIDE PROPHECY OF THE DAY (AZURE OPENAI)
+    // ----------------------------------------------------------------------
+    if (request.method === 'POST' && pathname === '/characters/daily-prophecy') {
+      const { characterId, characterName, date } = await readBody(request);
+      const name = (characterName || 'Hero').trim();
+
+      try {
+        if (apiKey && endpoint) {
+          const prompt = `You are ${name}. Today is ${date || 'today'}. Provide a single, inspirational, in-character daily prophecy or fortune (maximum 2 sentences) addressing the traveler. It should feel mystical, motivating, and stay 100% faithful to ${name}'s voice and personality. Do not include meta-commentary or quotation marks.`;
+          const aiResp = await callAzureOpenAI({
+            messages: [{ role: 'user', content: prompt }],
+            maxTokens: 120,
+          });
+          if (aiResp && aiResp.trim()) {
+            return sendJson(response, 200, {
+              quote: aiResp.trim().replace(/^"|"$/g, ''),
+              category: 'Oracle Wisdom',
+              tag: 'Azure Oracle',
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Azure daily prophecy generation fallback:', err.message);
+      }
+
+      return sendJson(response, 200, {
+        quote: `Destiny flows like a swift river today. Walk with steadfast purpose and let your courage guide your actions.`,
+        category: 'Guide Oracle',
+        tag: 'Universal Omen',
+      });
+    }
+
+    // ----------------------------------------------------------------------
     // 2c. DYNAMIC AI & INTERNET RIVAL ENCOUNTER GENERATOR
     // (Fetches canonically accurate arch-rivals from Azure OpenAI & web images
     // based on user's active character, searches, and choices)

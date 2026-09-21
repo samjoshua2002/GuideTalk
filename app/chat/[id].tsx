@@ -17,6 +17,7 @@ import {
   TouchableWithoutFeedback,
   Alert,
   Switch,
+  StatusBar,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,7 +27,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import { useTheme } from '@/src/context/ThemeContext';
 import { useAuth } from '@/src/context/AuthContext';
-import { getCharacter, characters } from '@/src/data/characters';
+import { getCharacter, characters, getAllBuiltinCharacters } from '@/src/data/characters';
 import { Character } from '@/src/types/character';
 import { DynamicCharacterImage } from '@/src/lib/dynamicImageService';
 import {
@@ -222,6 +223,9 @@ export default function ChatScreen() {
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const insets = useSafeAreaInsets();
+  const topInset = Platform.OS === 'android'
+    ? Math.max(StatusBar.currentHeight || 0, insets.top)
+    : insets.top;
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   // Full-screen profile menu & settings state
@@ -451,44 +455,88 @@ export default function ChatScreen() {
 
   // 1. Resolve character (either built-in, runtime registered, or custom from DB)
   useEffect(() => {
+    let isMounted = true;
     async function resolve() {
       const local = getCharacter(id || '');
       if (local) {
-        setCharacter(local);
+        if (isMounted) setCharacter(local);
         return;
       }
       try {
         const direct = await fetchCharacterById(id || '', token);
-        if (direct) {
+        if (direct && isMounted) {
           setCharacter(direct);
           return;
         }
         const customChars = await fetchCharacters(user?.id, token);
         const match = customChars.find((c: any) => c.id === id || c.mongoId === id || c._id === id);
-        if (match) setCharacter(match);
+        if (match && isMounted) {
+          setCharacter(match);
+          return;
+        }
       } catch {
-        // Not found
+        // Continue to fallback
       }
+      if (!isMounted) return;
+      // Fallback to match by id substring or first builtin character so user is never stuck
+      const all = getAllBuiltinCharacters();
+      const fallback = all.find((c) => c.id.toLowerCase().includes((id || '').toLowerCase())) || all[0];
+      if (fallback) setCharacter(fallback);
     }
     resolve();
+    return () => {
+      isMounted = false;
+    };
   }, [id, user, token]);
 
-  // 2. Initialize Conversation & Load History from MongoDB
+  // 2. Initialize Conversation & Load History
   useEffect(() => {
     if (!character) return;
     const targetChar: Character = character;
 
+    // Immediately render greeting message so the user sees the chat in 0ms!
+    setMessages((prev) => {
+      if (prev.length > 0) return prev;
+      const initial: Message[] = [
+        {
+          id: 'greeting',
+          role: 'character',
+          content: targetChar.greeting || 'Greetings, traveler.',
+        },
+      ];
+      if (prompt) {
+        initial.push({
+          id: 'prompt',
+          role: 'user',
+          content: prompt,
+        });
+      }
+      return initial;
+    });
+
+    let isMounted = true;
+
     async function initConversation(char: Character) {
+      const fallbackConvId = `local-${char.id}-${Date.now()}`;
       try {
         const deviceId = await getDeviceId();
         const activeUserId = user?.id || deviceId;
 
-        // Try to create or find active conversation
-        const convId = await createConversation(activeUserId, char, token);
+        // Try to create or find active conversation with fast timeout
+        const convId = await Promise.race([
+          createConversation(activeUserId, char, token),
+          new Promise<string>((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000)),
+        ]);
+        if (!isMounted) return;
         setConversationId(convId);
 
-        // Fetch existing history from MongoDB
-        const history: StoredMessage[] = await getConversationMessages(convId, activeUserId, token);
+        // Fetch existing history from MongoDB with fast timeout
+        const history: StoredMessage[] = await Promise.race([
+          getConversationMessages(convId, activeUserId, token),
+          new Promise<StoredMessage[]>((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000)),
+        ]);
+        if (!isMounted) return;
+
         if (history && history.length > 0) {
           setMessages(
             history.map((m) => ({
@@ -498,42 +546,21 @@ export default function ChatScreen() {
               photo: m.photo,
             }))
           );
-        } else {
-          // New conversation: set greeting and optional prompt
-          const initialList: Message[] = [
-            {
-              id: 'greeting',
-              role: 'character',
-              content: char.greeting || 'Greetings, traveler.',
-            },
-          ];
-          if (prompt) {
-            initialList.push({
-              id: 'prompt',
-              role: 'user',
-              content: prompt,
-            });
-          }
-          setMessages(initialList);
-
-          // If prompt was passed, auto-trigger first response
-          if (prompt) {
-            send(prompt, null, convId, initialList);
-          }
+        } else if (prompt) {
+          send(prompt, null, convId);
         }
-      } catch (err) {
-        console.log('Using local conversation mode:', err);
-        // Fallback local initial state
-        setMessages([
-          {
-            id: 'greeting',
-            role: 'character',
-            content: char.greeting || 'Greetings, traveler.',
-          },
-        ]);
+      } catch {
+        if (!isMounted) return;
+        setConversationId(fallbackConvId);
+        if (prompt) {
+          send(prompt, null, fallbackConvId);
+        }
       }
     }
     initConversation(targetChar);
+    return () => {
+      isMounted = false;
+    };
   }, [character]);
 
   const suggestions = useMemo(() => character?.starters.slice(0, 3) ?? [], [character]);
@@ -542,7 +569,7 @@ export default function ChatScreen() {
   const pickPhoto = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.6,
@@ -588,8 +615,18 @@ export default function ChatScreen() {
     try {
       const deviceId = await getDeviceId();
       const activeUserId = user?.id || deviceId;
-      const convId = activeConvId || (await createConversation(activeUserId, character, token));
-      if (!conversationId) setConversationId(convId);
+      let convId = activeConvId;
+      if (!convId) {
+        try {
+          convId = await Promise.race([
+            createConversation(activeUserId, character, token),
+            new Promise<string>((_, reject) => setTimeout(() => reject(new Error('timeout')), 1800)),
+          ]);
+        } catch {
+          convId = `local-${character.id}-${Date.now()}`;
+        }
+      }
+      if (!conversationId && convId) setConversationId(convId);
 
       const reply = await requestCharacterReply({
         character,
@@ -797,15 +834,15 @@ export default function ChatScreen() {
 
   if (!character) {
     return (
-      <SafeAreaView style={[styles.center, { backgroundColor: theme.background }]}>
+      <View style={[styles.center, { backgroundColor: theme.background, paddingTop: topInset }]}>
         <ActivityIndicator size="large" color={theme.text} />
         <Text style={[styles.loadingText, { color: theme.secondary }]}>Connecting with companion…</Text>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.screen, { backgroundColor: theme.background }]} edges={['top']}>
+    <View style={[styles.screen, { backgroundColor: theme.background, paddingTop: topInset }]}>
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -867,21 +904,6 @@ export default function ChatScreen() {
                 size={19}
                 color={isFav ? '#FF3B30' : theme.text}
               />
-            </Pressable>
-
-            {/* Model Switcher Pill */}
-            <Pressable
-              onPress={() => {
-                triggerHaptic('selection');
-                setShowModelMenu(!showModelMenu);
-              }}
-              style={[styles.modelPill, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
-            >
-              <Ionicons name="flash" size={11} color={theme.text} />
-              <Text style={[styles.modelPillText, { color: theme.text }]}>
-                {selectedModel === 'gpt-5.6-luna' ? 'Luna' : selectedModel === 'gpt-4o' ? '4o' : '5.1'}
-              </Text>
-              <Ionicons name="chevron-down" size={9} color={theme.secondary} />
             </Pressable>
 
             {/* Ellipsis button to open full profile menu */}
@@ -1090,7 +1112,7 @@ export default function ChatScreen() {
                       style={[styles.saveSpeechBtn, { backgroundColor: theme.text }]}
                     >
                       <Ionicons name="save-outline" size={14} color={theme.background} style={{ marginRight: 6 }} />
-                      <Text style={[styles.saveSpeechBtnText, { color: theme.background }]}>Apply Voice Tuning</Text>
+                      <Text style={[styles.saveSpeechBtnText, { color: theme.background }]}>Apply Chat Tuning</Text>
                     </Pressable>
 
                     {speakingStyle ? (
@@ -1219,36 +1241,7 @@ export default function ChatScreen() {
           </View>
         </Modal>
 
-        {/* Model Selection Dropdown Menu */}
-        {showModelMenu && (
-          <LiquidGlassView style={styles.modelMenu} borderRadius={16} intensity={45} elevated>
-            <Text style={[styles.modelMenuTitle, { color: theme.secondary }]}>AI INTELLIGENCE</Text>
-            {AVAILABLE_MODELS.map((m) => {
-              const isSelected = selectedModel === m.id;
-              return (
-                <Pressable
-                  key={m.id}
-                  onPress={() => {
-                    setSelectedModel(m.id);
-                    setShowModelMenu(false);
-                  }}
-                  style={[
-                    styles.modelMenuItem,
-                    isSelected && { backgroundColor: theme.surfaceSecondary },
-                  ]}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.modelItemName, { color: theme.text, fontWeight: isSelected ? '700' : '500' }]}>
-                      {m.name}
-                    </Text>
-                    <Text style={[styles.modelItemLabel, { color: theme.secondary }]}>{m.label}</Text>
-                  </View>
-                  {isSelected && <Ionicons name="checkmark" size={18} color={theme.text} />}
-                </Pressable>
-              );
-            })}
-          </LiquidGlassView>
-        )}
+
 
         {/* Message Stream */}
         <FlatList
@@ -1430,21 +1423,7 @@ export default function ChatScreen() {
                 multiline
               />
 
-              {/* Microphone / voice button */}
-              <Pressable
-                onPress={startVoiceInput}
-                accessibilityLabel="Voice input"
-                style={[
-                  styles.attachBtn,
-                  { backgroundColor: theme.surfaceSecondary },
-                ]}
-              >
-                <Ionicons
-                  name="mic-outline"
-                  size={22}
-                  color={theme.text}
-                />
-              </Pressable>
+              {/* Voice icon hidden for chat-only mode for now */}
 
               <Pressable
                 accessibilityRole="button"
@@ -1498,7 +1477,7 @@ export default function ChatScreen() {
           </TouchableWithoutFeedback>
         </Modal>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 

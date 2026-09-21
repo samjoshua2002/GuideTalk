@@ -21,8 +21,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/src/context/ThemeContext';
 import { useAuth } from '@/src/context/AuthContext';
-import { getAllBuiltinCharacters } from '@/src/data/characters';
-import { getAllPresets, CATEGORY_PRESETS, UniverseCategory, RivalRelation } from '@/src/data/rivals';
+import { getAllBuiltinCharacters, registerCustomCharacter } from '@/src/data/characters';
+import { getAllPresets, CATEGORY_PRESETS, UniverseCategory, RivalRelation, getRivalsForWorkspace } from '@/src/data/rivals';
 import { Character } from '@/src/types/character';
 import { fetchCharacters, listConversations, ConversationSummary, fetchRecommendations, fetchDynamicRivals } from '@/src/lib/chatApi';
 import { LiquidGlassView } from '@/src/components/LiquidGlassView';
@@ -33,11 +33,25 @@ import { triggerHaptic } from '@/src/lib/haptics';
 import { getHiddenRecentIds, subscribeToFavorites, getFavoriteIds } from '@/src/lib/favorites';
 import { getInteractedCharacterIds } from '@/src/lib/activityTracker';
 import { DynamicCharacterImage } from '@/src/lib/dynamicImageService';
+import {
+  getDailySeed,
+  formatTodayProphecyDate,
+  resolveProphecyForCharacter,
+  fetchDynamicServerProphecy,
+} from '@/src/lib/prophecyService';
 
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HERO_CARD_WIDTH = Math.min(SCREEN_WIDTH - 40, 360);
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList) as any;
+
+// Fixed card dimensions for getItemLayout — eliminates measurement overhead
+const EXPLORE_CARD_WIDTH = (SCREEN_WIDTH - 28 - 10) / 2; // 2 columns, 14px side padding, 10px gap
+const EXPLORE_CARD_HEIGHT = 285; // image 200 + content 85
+const PANORAMIC_CARD_WIDTH = SCREEN_WIDTH * 0.78;
+const PANORAMIC_CARD_HEIGHT = 160;
+const WORKSPACE_CARD_WIDTH = 184; // 170 + 14 gap
+const SPOTLIGHT_ITEM_WIDTH = SCREEN_WIDTH - 28;
 
 interface CategoryItem {
   id: string;
@@ -206,7 +220,11 @@ export default function DiscoverScreen() {
 
   const [activeCategoryId, setActiveCategoryId] = useState('all');
   const [rivalShuffleSeed, setRivalShuffleSeed] = useState(0);
-  const [prophecyIndex, setProphecyIndex] = useState(0);
+  const [prophecyOffset, setProphecyOffset] = useState(0);
+  const [customProphecyQuote, setCustomProphecyQuote] = useState<{ quote: string; category: string; tag?: string } | null>(null);
+  const [isProphecyRefreshing, setIsProphecyRefreshing] = useState(false);
+  const dailySeed = useMemo(() => getDailySeed(), []);
+  const todayDateLabel = useMemo(() => formatTodayProphecyDate(), []);
   const [characterList, setCharacterList] = useState<Character[]>(getAllBuiltinCharacters);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -325,7 +343,10 @@ export default function DiscoverScreen() {
       if (Array.isArray(custom) && custom.length > 0) {
         const map = new Map<string, Character>();
         getAllBuiltinCharacters().forEach((c) => map.set(c.id, c));
-        custom.forEach((c) => map.set(c.id, c));
+        custom.forEach((c) => {
+          map.set(c.id, c);
+          registerCustomCharacter(c);
+        });
         setCharacterList(Array.from(map.values()));
       }
     } catch {
@@ -409,7 +430,10 @@ export default function DiscoverScreen() {
           setCharacterList((prev) => {
             const map = new Map<string, Character>();
             prev.forEach((c) => map.set(c.id, c));
-            parsed.forEach((c) => map.set(c.id, c));
+            parsed.forEach((c) => {
+              map.set(c.id, c);
+              registerCustomCharacter(c);
+            });
             return Array.from(map.values());
           });
         }
@@ -453,7 +477,10 @@ export default function DiscoverScreen() {
         setCharacterList((prev) => {
           const map = new Map<string, Character>();
           prev.forEach((c) => map.set(c.id, c));
-          recs.forEach((c) => map.set(c.id, c));
+          recs.forEach((c) => {
+            map.set(c.id, c);
+            registerCustomCharacter(c);
+          });
           return Array.from(map.values());
         });
 
@@ -671,7 +698,11 @@ export default function DiscoverScreen() {
   const heroFadeAnim = useRef(new Animated.Value(1)).current;
   const isUserInteractingRef = useRef(false);
   const spotlightListRef = useRef<any>(null);
-  const SPOTLIGHT_CARD_WIDTH = SCREEN_WIDTH - 28;
+  // SPOTLIGHT_CARD_WIDTH === SPOTLIGHT_ITEM_WIDTH (module-level constant) — use that instead to avoid recreating on every render
+
+  // Keep a stable ref for spotlight length so renderSpotlightItem doesn't need the array in deps
+  const spotlightLengthRef = useRef(spotlightCharacters.length);
+  useEffect(() => { spotlightLengthRef.current = spotlightCharacters.length; }, [spotlightCharacters.length]);
 
   // Continuous Native Scroll Velocity Value for Fluid "Smug Blur Smoke" Transition
   const scrollX = useRef(new Animated.Value(0)).current;
@@ -680,7 +711,7 @@ export default function DiscoverScreen() {
     if (index >= 0 && index < spotlightCharacters.length) {
       triggerHaptic('selection');
       spotlightListRef.current?.scrollToOffset({
-        offset: index * SPOTLIGHT_CARD_WIDTH,
+        offset: index * SPOTLIGHT_ITEM_WIDTH,
         animated: true,
       });
       setActiveHeroIndex(index);
@@ -706,9 +737,9 @@ export default function DiscoverScreen() {
     const interval = setInterval(() => {
       if (isUserInteractingRef.current) return;
       setActiveHeroIndex((prevIndex) => {
-        const next = (prevIndex + 1) % spotlightCharacters.length;
+        const next = (prevIndex + 1) % spotlightLengthRef.current;
         spotlightListRef.current?.scrollToOffset({
-          offset: next * SPOTLIGHT_CARD_WIDTH,
+          offset: next * SPOTLIGHT_ITEM_WIDTH,
           animated: true,
         });
         setDisplayedHeroIndex(next);
@@ -716,7 +747,7 @@ export default function DiscoverScreen() {
       });
     }, 30000);
     return () => clearInterval(interval);
-  }, [spotlightCharacters.length, SPOTLIGHT_CARD_WIDTH]);
+  }, [spotlightCharacters.length]);
 
   const currentHero = spotlightCharacters[displayedHeroIndex] || spotlightCharacters[0];
   const currentHeroAccent = currentHero?.accent || '#0A84FF';
@@ -724,11 +755,24 @@ export default function DiscoverScreen() {
   // ═══════════════════════════════════════════════════════
   // DYNAMIC AI & INTERNET RIVALS (Tailored to user's latest interest / search)
   // ═══════════════════════════════════════════════════════
+  const workspaceIdsKey = useMemo(() => {
+    return workspaceCharacters.map((c) => c.id).sort().join(',');
+  }, [workspaceCharacters]);
+
+  const searchQueriesKey = useMemo(() => {
+    return (rawRecentSearchQueries || []).slice(0, 5).join(',');
+  }, [rawRecentSearchQueries]);
+
+  const isFetchingRivalsRef = useRef(false);
+
   useEffect(() => {
     let isMounted = true;
     const fetchRivals = async () => {
       if (workspaceCharacters.length === 0 && rawRecentSearchQueries.length === 0) return;
+      if (isFetchingRivalsRef.current) return;
+      isFetchingRivalsRef.current = true;
       setIsFetchingRivals(true);
+
       try {
         const targets = workspaceCharacters.slice(0, 4).map((c) => ({
           id: c.id,
@@ -742,9 +786,9 @@ export default function DiscoverScreen() {
         });
         if (isMounted && Array.isArray(results) && results.length > 0) {
           setDynamicRivals(results);
-          // Register any newly generated rival characters into character list
           results.forEach((r: any) => {
             if (r?.rivalCharacter?.id) {
+              registerCustomCharacter(r.rivalCharacter);
               setCharacterList((prev) => {
                 if (prev.some((c) => c.id === r.rivalCharacter.id)) return prev;
                 return [...prev, r.rivalCharacter];
@@ -753,8 +797,9 @@ export default function DiscoverScreen() {
           });
         }
       } catch (err) {
-        console.warn('Failed to fetch dynamic rivals:', err);
+        console.log('Dynamic rivals unavailable, using local lore:', (err as any)?.message || err);
       } finally {
+        isFetchingRivalsRef.current = false;
         if (isMounted) setIsFetchingRivals(false);
       }
     };
@@ -763,11 +808,10 @@ export default function DiscoverScreen() {
     return () => {
       isMounted = false;
     };
-  }, [workspaceCharacters, rawRecentSearchQueries, token]);
+  }, [workspaceIdsKey, searchQueriesKey, token]);
 
-  // 100% Dynamic Rival Encounters: Tailored exclusively from Azure OpenAI + Internet Search
-  // All static/predefined presets have been completely eliminated.
-  const rivalRelations = useMemo(() => {
+  // Dynamic Rival Encounters with rich curated fallback
+  const rivalRelations: RivalRelation[] = useMemo(() => {
     const combined: RivalRelation[] = [];
     const seenRivalIds = new Set<string>();
 
@@ -778,11 +822,12 @@ export default function DiscoverScreen() {
       }
     });
 
-    if (combined.length === 0) return [];
-    if (rivalShuffleSeed === 0) return combined;
-    const offset = rivalShuffleSeed % combined.length;
-    return [...combined.slice(offset), ...combined.slice(0, offset)];
-  }, [dynamicRivals, rivalShuffleSeed]);
+    const activeList: RivalRelation[] = combined.length > 0 ? combined : getRivalsForWorkspace(workspaceIds);
+    if (activeList.length === 0) return [];
+    if (rivalShuffleSeed === 0) return activeList;
+    const offset = rivalShuffleSeed % activeList.length;
+    return [...activeList.slice(offset), ...activeList.slice(0, offset)];
+  }, [dynamicRivals, rivalShuffleSeed, workspaceIds]);
 
   const handleRerollRivals = async () => {
     triggerHaptic('medium');
@@ -818,19 +863,39 @@ export default function DiscoverScreen() {
     }
   };
 
-  // Daily Companion Prophecy thought
+  // Daily Companion Prophecy thought — dynamically rotates daily & cycles through oracle wisdom
   const currentProphecy = useMemo(() => {
     if (!characterList || characterList.length === 0) return null;
-    const char = characterList[prophecyIndex % characterList.length];
+    const char = characterList[(dailySeed + prophecyOffset) % characterList.length];
+    if (!char) return null;
+    const resolved = resolveProphecyForCharacter(char, dailySeed, prophecyOffset);
     return {
       character: char,
-      quote: char.greeting || char.shortDescription || 'Every legend has a beginning.',
+      quote: customProphecyQuote?.quote || resolved.quote,
+      category: customProphecyQuote?.category || resolved.category,
+      tag: customProphecyQuote?.tag || resolved.tag,
     };
-  }, [characterList, prophecyIndex]);
+  }, [characterList, dailySeed, prophecyOffset, customProphecyQuote]);
+
+  // Attempt to enrich prophecy with Azure OpenAI when available
+  useEffect(() => {
+    const char = currentProphecy?.character;
+    if (!char) return;
+    let isCancelled = false;
+    fetchDynamicServerProphecy(char.id, char.name).then((serverProphecy) => {
+      if (!isCancelled && serverProphecy) {
+        setCustomProphecyQuote(serverProphecy);
+      }
+    });
+    return () => {
+      isCancelled = true;
+    };
+  }, [currentProphecy?.character?.id]);
 
   const handleNextProphecy = () => {
     triggerHaptic('light');
-    setProphecyIndex((prev) => prev + 1);
+    setCustomProphecyQuote(null);
+    setProphecyOffset((prev) => prev + 1);
   };
 
   const handleRandomRoll = () => {
@@ -959,6 +1024,7 @@ export default function DiscoverScreen() {
           setDynamicRivals(fresh);
           fresh.forEach((r: any) => {
             if (r?.rivalCharacter?.id) {
+              registerCustomCharacter(r.rivalCharacter);
               setCharacterList((prev) => {
                 if (prev.some((c) => c.id === r.rivalCharacter.id)) return prev;
                 return [...prev, r.rivalCharacter];
@@ -973,9 +1039,187 @@ export default function DiscoverScreen() {
     triggerHaptic('success');
   }, [loadFavorites, workspaceCharacters, rawRecentSearchQueries, token]);
 
-  const showSkeleton = isRefreshing;
+  // ─── Memoised renderItem callbacks — stable references so FlatList never re-renders unnecessarily ────
+
+  const renderSpotlightItem = useCallback(({ item, index }: { item: Character; index: number }) => {
+    const heroAccent = item.accent || '#0A84FF';
+    return (
+      <View style={styles.netflixSpotlightCell}>
+        <View
+          style={[
+            styles.netflixPortraitShadowWrapper,
+            isDark ? styles.netflixShadowDark : styles.netflixShadowLight,
+          ]}
+        >
+          <View style={styles.netflixPortraitInner}>
+            <Pressable
+              onPress={() => router.push(`/chat/${item.id}`)}
+              style={({ pressed }) => [{ opacity: pressed ? 0.94 : 1 }]}
+            >
+              <DynamicCharacterImage
+                character={item}
+                preferCover
+                style={styles.netflixPortraitImage}
+                contentFit="cover"
+                contentPosition="top"
+                transition={200}
+              />
+              <LinearGradient
+                colors={['transparent', 'transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.92)']}
+                style={styles.netflixPortraitGradient}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+              />
+              <View style={[styles.netflixPortraitBadge, { backgroundColor: heroAccent + 'EE' }]}>
+                <Ionicons name="sparkles" size={10} color="#fff" style={{ marginRight: 4 }} />
+                <Text style={styles.netflixPortraitBadgeText}>{getHeroBadge(item)}</Text>
+              </View>
+              <View style={styles.netflixRankBadgePortrait}>
+                <Ionicons name="trophy" size={10} color="#FFD700" style={{ marginRight: 3 }} />
+                <Text style={styles.netflixRankText}>
+                  #{index + 1} of {spotlightLengthRef.current}
+                </Text>
+              </View>
+              <View style={styles.netflixPortraitOverlay}>
+                <Text style={styles.netflixPortraitName} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.netflixPortraitRole} numberOfLines={1}>{item.role}</Text>
+                <Text style={styles.netflixPortraitDesc} numberOfLines={2}>
+                  {item.shortDescription || item.greeting || 'Engage in an authentic storyline with full emotional depth.'}
+                </Text>
+                <View style={styles.netflixActionRow}>
+                  <Pressable
+                    onPress={() => router.push(`/chat/${item.id}`)}
+                    style={({ pressed }) => [styles.netflixChatBtn, { backgroundColor: '#FFFFFF', opacity: pressed ? 0.88 : 1 }]}
+                  >
+                    <Ionicons name="chatbubble-ellipses" size={15} color="#000" style={{ marginRight: 6 }} />
+                    <Text style={[styles.netflixChatBtnText, { color: '#000' }]}>Chat with {item.name.split(' ')[0]}</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => openCharacter(item.id)}
+                    style={({ pressed }) => [styles.netflixInfoBtn, { opacity: pressed ? 0.8 : 1 }]}
+                  >
+                    <Ionicons name="information-circle-outline" size={17} color="#fff" style={{ marginRight: 4 }} />
+                    <Text style={[styles.netflixInfoBtnText, { color: '#fff' }]}>Lore</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    );
+  }, [router, openCharacter, theme, isDark]);
+
+  const renderPanoramicItem = useCallback(({ item, index }: { item: Character; index: number }) => {
+    const matchPercent = Math.max(88, 99 - index * 2);
+    return (
+      <Pressable
+        onPress={() => openCharacter(item.id)}
+        style={({ pressed }) => [styles.panoramicCardPressable, pressed && { opacity: 0.9 }]}
+      >
+        <LiquidGlassView style={styles.panoramicCard} borderRadius={22} intensity={35} elevated>
+          <View style={styles.panoramicImageWrap}>
+            <DynamicCharacterImage
+              character={item}
+              preferCover
+              style={styles.panoramicImage}
+              contentFit="cover"
+              contentPosition="top"
+              transition={200}
+            />
+            <View style={[styles.panoramicMatchBadge, { backgroundColor: item.accent ? item.accent + 'E6' : '#0A84FFE6' }]}>
+              <Text style={styles.panoramicMatchText} numberOfLines={1}>
+                {item.recommendationReason || `${matchPercent}% Match`}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.panoramicContent}>
+            <View style={styles.panoramicHeaderRow}>
+              <Text style={[styles.panoramicSeries, { color: theme.secondary }]} numberOfLines={1}>
+                {item.series || 'Guild Universe'}
+              </Text>
+              <View style={[styles.panoramicOnlineDot, { backgroundColor: item.isOnline ? '#34C759' : theme.muted }]} />
+            </View>
+            <Text style={[styles.panoramicName, { color: theme.text }]} numberOfLines={1}>{item.name}</Text>
+            <Text style={[styles.panoramicRole, { color: theme.secondary }]} numberOfLines={1}>{item.role}</Text>
+            <View style={[styles.panoramicQuoteBubble, { backgroundColor: theme.surfaceSecondary }]}>
+              <Text style={[styles.panoramicQuoteText, { color: theme.text }]} numberOfLines={2}>
+                "{item.greeting || item.shortDescription}"
+              </Text>
+            </View>
+            <View style={styles.panoramicFooterRow}>
+              <View style={styles.panoramicTagsRow}>
+                {(item.personality || []).slice(0, 2).map((t) => (
+                  <View key={t} style={[styles.panoramicTagPill, { borderColor: theme.border }]}>
+                    <Text style={[styles.panoramicTagText, { color: theme.muted }]} numberOfLines={1}>{t}</Text>
+                  </View>
+                ))}
+              </View>
+              <View style={[styles.panoramicChatBtn, { backgroundColor: theme.text }]}>
+                <Ionicons name="chatbubble-ellipses" size={12} color={theme.background} />
+              </View>
+            </View>
+          </View>
+        </LiquidGlassView>
+      </Pressable>
+    );
+  }, [openCharacter, theme]);
+
+  const renderExploreItem = useCallback(({ item: char }: { item: Character }) => {
+    const accent = char.accent || '#0A84FF';
+    return (
+      <Pressable
+        style={({ pressed }) => [styles.exploreCardWrap, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
+        onPress={() => {
+          triggerHaptic('light');
+          router.push(`/chat/${char.id}`);
+        }}
+      >
+        <LiquidGlassView style={styles.exploreCard} borderRadius={20} intensity={30} elevated>
+          <View style={styles.exploreCardImageWrap}>
+            <DynamicCharacterImage
+              character={char}
+              preferCover
+              style={styles.exploreCardImage}
+              contentFit="cover"
+              contentPosition="top"
+              transition={200}
+            />
+            <LinearGradient
+              colors={['rgba(0,0,0,0.4)', 'transparent', 'rgba(0,0,0,0.88)']}
+              style={StyleSheet.absoluteFill}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+            />
+            <View style={[styles.exploreUniverseBadge, { backgroundColor: accent + 'EE' }]}>
+              <Text style={styles.exploreUniverseBadgeText} numberOfLines={1}>
+                {(char.series || char.category || 'LEGEND').toUpperCase()}
+              </Text>
+            </View>
+            <View style={styles.exploreOnlineDot} />
+          </View>
+          <View style={styles.exploreCardContent}>
+            <Text style={[styles.exploreCardName, { color: theme.text }]} numberOfLines={1}>{char.name}</Text>
+            <Text style={[styles.exploreCardRole, { color: theme.secondary }]} numberOfLines={1}>{char.role}</Text>
+            <Text style={[styles.exploreCardSnippet, { color: theme.muted }]} numberOfLines={2}>
+              "{char.greeting || char.shortDescription || 'An authentic saga awaits.'}"
+            </Text>
+            <View style={[styles.exploreConnectPill, { backgroundColor: theme.surfaceSecondary }]}>
+              <Ionicons name="chatbubble" size={11} color={theme.text} style={{ marginRight: 4 }} />
+              <Text style={[styles.exploreConnectText, { color: theme.text }]}>Connect</Text>
+              <Ionicons name="chevron-forward" size={12} color={theme.muted} style={{ marginLeft: 'auto' }} />
+            </View>
+          </View>
+        </LiquidGlassView>
+      </Pressable>
+    );
+  }, [router, theme]);
+
+  // Only show skeleton on initial mount when no characters exist yet — never wipe out content during pull-to-refresh
+  const showSkeleton = isLoadingData && characterList.length === 0;
 
   return (
+
     <View style={[styles.screen, { backgroundColor: theme.background }]}>
       {/* Dynamic Netflix-Style Glossy Blurred Backdrop - hidden during skeleton so clean background color shows */}
       {/* Dynamic Netflix-Style Smokey Blurred Backdrop with native gesture velocity */}
@@ -984,9 +1228,9 @@ export default function DiscoverScreen() {
           {/* Continuous Velocity-Driven Smokey Image Layers */}
           {spotlightCharacters.map((hero, i) => {
             const inputRange = [
-              (i - 1) * SPOTLIGHT_CARD_WIDTH,
-              i * SPOTLIGHT_CARD_WIDTH,
-              (i + 1) * SPOTLIGHT_CARD_WIDTH,
+              (i - 1) * SPOTLIGHT_ITEM_WIDTH,
+              i * SPOTLIGHT_ITEM_WIDTH,
+              (i + 1) * SPOTLIGHT_ITEM_WIDTH,
             ];
 
             const opacity = scrollX.interpolate({
@@ -1029,7 +1273,11 @@ export default function DiscoverScreen() {
                 <DynamicCharacterImage
                   character={hero}
                   preferCover
-                  style={styles.netflixBackdropImg}
+                  style={[
+                    styles.netflixBackdropImg,
+                    Platform.OS === 'android' && { opacity: 0.35 },
+                  ]}
+                  blurRadius={Platform.OS === 'android' ? 36 : 0}
                   contentFit="cover"
                   contentPosition="top"
                 />
@@ -1039,9 +1287,28 @@ export default function DiscoverScreen() {
                     StyleSheet.absoluteFill,
                     {
                       backgroundColor: hero.accent || '#0A84FF',
-                      opacity: 0.28,
+                      opacity: isDark ? 0.45 : 0.35,
                     },
                   ]}
+                />
+                {/* Radiant atmospheric ambient glow — vibrant in both dark and light modes */}
+                <LinearGradient
+                  colors={[
+                    hero.accent
+                      ? `${hero.accent}${isDark ? 'AA' : '88'}`
+                      : isDark
+                      ? 'rgba(10, 132, 255, 0.65)'
+                      : 'rgba(10, 132, 255, 0.45)',
+                    hero.accent
+                      ? `${hero.accent}${isDark ? '44' : '30'}`
+                      : isDark
+                      ? 'rgba(10, 132, 255, 0.28)'
+                      : 'rgba(10, 132, 255, 0.18)',
+                    'transparent',
+                  ]}
+                  style={StyleSheet.absoluteFill}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 0.85 }}
                 />
               </Animated.View>
             );
@@ -1049,26 +1316,41 @@ export default function DiscoverScreen() {
 
           {/* Ambient single blur layer (intense frosted glass creates fluid smokey diffusion) */}
           <BlurView
-            intensity={Platform.OS === 'android' ? 65 : 95}
+            intensity={Platform.OS === 'android' ? 50 : 95}
             tint={isDark ? 'dark' : 'light'}
             style={StyleSheet.absoluteFill}
           />
-          {/* Near-opaque smooth tint overlay */}
+          {/* Luminous smooth tint overlay — high brightness and vibrant color bloom in both themes */}
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.76)' : 'rgba(255,255,255,0.74)' },
+              {
+                backgroundColor: isDark
+                  ? Platform.OS === 'android'
+                    ? 'rgba(10, 8, 20, 0.42)'
+                    : 'rgba(0, 0, 0, 0.36)'
+                  : Platform.OS === 'android'
+                    ? 'rgba(255, 255, 255, 0.48)'
+                    : 'rgba(255, 255, 255, 0.50)',
+              },
             ]}
           />
           {/* Bottom gradient blending into page */}
           <LinearGradient
             colors={[
               'transparent',
-              isDark ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)',
-              isDark ? 'rgba(0,0,0,0.92)' : 'rgba(255,255,255,0.92)',
+              isDark
+                ? (Platform.OS === 'android' ? 'rgba(10, 8, 20, 0.35)' : 'rgba(0,0,0,0.30)')
+                : 'rgba(255,255,255,0.35)',
+              isDark
+                ? (Platform.OS === 'android' ? 'rgba(10, 8, 20, 0.85)' : 'rgba(0,0,0,0.85)')
+                : 'rgba(255,255,255,0.88)',
               theme.background,
             ]}
-            style={styles.netflixBottomGradient}
+            style={[
+              styles.netflixBottomGradient,
+              { height: 360 },
+            ]}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
           />
@@ -1158,19 +1440,21 @@ export default function DiscoverScreen() {
                 data={spotlightCharacters}
                 horizontal
                 pagingEnabled
-                snapToInterval={SPOTLIGHT_CARD_WIDTH}
+                snapToInterval={SPOTLIGHT_ITEM_WIDTH}
                 snapToAlignment="center"
                 decelerationRate="fast"
                 disableIntervalMomentum={Platform.OS === 'ios'}
                 showsHorizontalScrollIndicator={false}
                 nestedScrollEnabled
+                style={{ overflow: 'visible' }}
+                contentContainerStyle={{ paddingVertical: 4 }}
                 keyExtractor={(item: Character) => `spotlight-hero-${item.id}`}
                 onScrollBeginDrag={() => {
                   isUserInteractingRef.current = true;
                 }}
                 onScrollEndDrag={(e: any) => {
                   const offsetX = e.nativeEvent.contentOffset.x;
-                  const idx = Math.round(offsetX / SPOTLIGHT_CARD_WIDTH);
+                  const idx = Math.round(offsetX / SPOTLIGHT_ITEM_WIDTH);
                   if (idx >= 0 && idx < spotlightCharacters.length && idx !== displayedHeroIndex) {
                     triggerHaptic('light');
                     setActiveHeroIndex(idx);
@@ -1182,7 +1466,7 @@ export default function DiscoverScreen() {
                 }}
                 onMomentumScrollEnd={(e: any) => {
                   const offsetX = e.nativeEvent.contentOffset.x;
-                  const idx = Math.round(offsetX / SPOTLIGHT_CARD_WIDTH);
+                  const idx = Math.round(offsetX / SPOTLIGHT_ITEM_WIDTH);
                   if (idx >= 0 && idx < spotlightCharacters.length && idx !== displayedHeroIndex) {
                     triggerHaptic('light');
                     setActiveHeroIndex(idx);
@@ -1193,86 +1477,16 @@ export default function DiscoverScreen() {
                   [{ nativeEvent: { contentOffset: { x: scrollX } } }],
                   { useNativeDriver: true }
                 )}
-                scrollEventThrottle={1}
-                renderItem={({ item, index }: { item: Character; index: number }) => {
-                  const heroAccent = item.accent || '#0A84FF';
-                  return (
-                    <View style={{ width: SPOTLIGHT_CARD_WIDTH }}>
-                      <View style={styles.netflixPortraitContainer}>
-                        <Pressable
-                          onPress={() => router.push(`/chat/${item.id}`)}
-                          style={({ pressed }) => [{ opacity: pressed ? 0.94 : 1 }]}
-                        >
-                          <DynamicCharacterImage
-                            character={item}
-                            preferCover
-                            style={styles.netflixPortraitImage}
-                            contentFit="cover"
-                            contentPosition="top"
-                            transition={200}
-                          />
-                          <LinearGradient
-                            colors={['transparent', 'transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.92)']}
-                            style={styles.netflixPortraitGradient}
-                            start={{ x: 0.5, y: 0 }}
-                            end={{ x: 0.5, y: 1 }}
-                          />
-                          {/* Recommendation badge top-left (1 or 2 words max) */}
-                          <View style={[styles.netflixPortraitBadge, { backgroundColor: heroAccent + 'EE' }]}>
-                            <Ionicons name="sparkles" size={10} color="#fff" style={{ marginRight: 4 }} />
-                            <Text style={styles.netflixPortraitBadgeText}>
-                              {getHeroBadge(item)}
-                            </Text>
-                          </View>
-                          {/* Rank badge top-right */}
-                          <View style={styles.netflixRankBadgePortrait}>
-                            <Ionicons name="trophy" size={10} color="#FFD700" style={{ marginRight: 3 }} />
-                            <Text style={styles.netflixRankText}>
-                              #{index + 1} of {spotlightCharacters.length}
-                            </Text>
-                          </View>
-                          {/* Character name & info overlaid on portrait */}
-                          <View style={styles.netflixPortraitOverlay}>
-                            <Text style={styles.netflixPortraitName} numberOfLines={1}>
-                              {item.name}
-                            </Text>
-                            <Text style={styles.netflixPortraitRole} numberOfLines={1}>
-                              {item.role}
-                            </Text>
-                            <Text style={styles.netflixPortraitDesc} numberOfLines={2}>
-                              {item.shortDescription || item.greeting || 'Engage in an authentic storyline with full emotional depth.'}
-                            </Text>
-                            {/* Action Row inside portrait */}
-                            <View style={styles.netflixActionRow}>
-                              <Pressable
-                                onPress={() => router.push(`/chat/${item.id}`)}
-                                style={({ pressed }) => [
-                                  styles.netflixChatBtn,
-                                  { backgroundColor: '#FFFFFF', opacity: pressed ? 0.88 : 1 },
-                                ]}
-                              >
-                                <Ionicons name="chatbubble-ellipses" size={15} color="#000" style={{ marginRight: 6 }} />
-                                <Text style={[styles.netflixChatBtnText, { color: '#000' }]}>
-                                  Chat with {item.name.split(' ')[0]}
-                                </Text>
-                              </Pressable>
-                              <Pressable
-                                onPress={() => openCharacter(item.id)}
-                                style={({ pressed }) => [
-                                  styles.netflixInfoBtn,
-                                  { opacity: pressed ? 0.8 : 1 },
-                                ]}
-                              >
-                                <Ionicons name="information-circle-outline" size={17} color="#fff" style={{ marginRight: 4 }} />
-                                <Text style={[styles.netflixInfoBtnText, { color: '#fff' }]}>Lore</Text>
-                              </Pressable>
-                            </View>
-                          </View>
-                        </Pressable>
-                      </View>
-                    </View>
-                  );
-                }}
+                scrollEventThrottle={16}
+                renderItem={renderSpotlightItem}
+                getItemLayout={(_: any, index: number) => ({
+                  length: SPOTLIGHT_ITEM_WIDTH,
+                  offset: SPOTLIGHT_ITEM_WIDTH * index,
+                  index,
+                })}
+                initialNumToRender={2}
+                maxToRenderPerBatch={2}
+                windowSize={3}
               />
 
               {/* Dot indicators directly below spotlight */}
@@ -1687,15 +1901,18 @@ export default function DiscoverScreen() {
         </View>
 
         {/* ============================================================ */}
-        {/* INTERACTIVE: GUILD PROPHECY OF THE DAY                       */}
+        {/* INTERACTIVE: GUIDE PROPHECY OF THE DAY                       */}
         {/* ============================================================ */}
         {currentProphecy && (
           <View style={styles.prophecyWrapper}>
             <LiquidGlassView style={styles.prophecyCard} borderRadius={20} intensity={25} elevated>
               <View style={styles.prophecyHeader}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
                   <Ionicons name="sparkles" size={14} color="#FF9F0A" />
-                  <Text style={[styles.prophecyLabel, { color: '#FF9F0A' }]}>GUILD PROPHECY OF THE DAY</Text>
+                  <Text style={[styles.prophecyLabel, { color: '#FF9F0A' }]}>GUIDE PROPHECY OF THE DAY</Text>
+                  <View style={styles.prophecyDateBadge}>
+                    <Text style={styles.prophecyDateText}>{todayDateLabel}</Text>
+                  </View>
                 </View>
                 <Pressable onPress={handleNextProphecy} hitSlop={8} style={styles.prophecyNextBtn}>
                   <Ionicons name="refresh" size={13} color={theme.secondary} />
@@ -1704,7 +1921,7 @@ export default function DiscoverScreen() {
               </View>
               <Pressable
                 onPress={() => router.push(`/chat/${currentProphecy.character.id}`)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8 }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 }}
               >
                 <Image
                   source={{ uri: currentProphecy.character.avatarUrl }}
@@ -1713,10 +1930,19 @@ export default function DiscoverScreen() {
                   contentPosition="top"
                 />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.prophecyCharName, { color: theme.text }]}>
-                    {currentProphecy.character.name}
-                  </Text>
-                  <Text style={[styles.prophecyQuote, { color: theme.secondary }]} numberOfLines={2}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
+                    <Text style={[styles.prophecyCharName, { color: theme.text }]}>
+                      {currentProphecy.character.name}
+                    </Text>
+                    {currentProphecy.category && (
+                      <View style={styles.prophecyTagPill}>
+                        <Text style={styles.prophecyTagText}>
+                          {currentProphecy.category}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={[styles.prophecyQuote, { color: theme.secondary }]} numberOfLines={3}>
                     "{currentProphecy.quote}"
                   </Text>
                 </View>
@@ -1801,84 +2027,16 @@ export default function DiscoverScreen() {
               horizontal
               showsHorizontalScrollIndicator={false}
               keyExtractor={(item) => `panoramic-like-${item.id}`}
-              renderItem={({ item, index }) => {
-                const matchPercent = Math.max(88, 99 - (index * 2));
-                return (
-                  <Pressable
-                    onPress={() => openCharacter(item.id)}
-                    style={({ pressed }) => [styles.panoramicCardPressable, pressed && { opacity: 0.9 }]}
-                  >
-                    <LiquidGlassView style={styles.panoramicCard} borderRadius={22} intensity={35} elevated>
-                      {/* Left Column: Portrait */}
-                      <View style={styles.panoramicImageWrap}>
-                        <DynamicCharacterImage
-                          character={item}
-                          preferCover
-                          style={styles.panoramicImage}
-                          contentFit="cover"
-                          contentPosition="top"
-                          transition={200}
-                        />
-                        <View
-                          style={[
-                            styles.panoramicMatchBadge,
-                            { backgroundColor: item.accent ? item.accent + 'E6' : '#0A84FFE6' },
-                          ]}
-                        >
-                          <Text style={styles.panoramicMatchText} numberOfLines={1}>
-                            {item.recommendationReason || `${matchPercent}% Match`}
-                          </Text>
-                        </View>
-                      </View>
-
-                      {/* Right Column: Info, Quote & Action */}
-                      <View style={styles.panoramicContent}>
-                        <View style={styles.panoramicHeaderRow}>
-                          <Text style={[styles.panoramicSeries, { color: theme.secondary }]} numberOfLines={1}>
-                            {item.series || 'Guild Universe'}
-                          </Text>
-                          <View
-                            style={[
-                              styles.panoramicOnlineDot,
-                              { backgroundColor: item.isOnline ? '#34C759' : theme.muted },
-                            ]}
-                          />
-                        </View>
-
-                        <Text style={[styles.panoramicName, { color: theme.text }]} numberOfLines={1}>
-                          {item.name}
-                        </Text>
-
-                        <Text style={[styles.panoramicRole, { color: theme.secondary }]} numberOfLines={1}>
-                          {item.role}
-                        </Text>
-
-                        <View style={[styles.panoramicQuoteBubble, { backgroundColor: theme.surfaceSecondary }]}>
-                          <Text style={[styles.panoramicQuoteText, { color: theme.text }]} numberOfLines={2}>
-                            "{item.greeting || item.shortDescription}"
-                          </Text>
-                        </View>
-
-                        <View style={styles.panoramicFooterRow}>
-                          <View style={styles.panoramicTagsRow}>
-                            {(item.personality || []).slice(0, 2).map((t) => (
-                              <View key={t} style={[styles.panoramicTagPill, { borderColor: theme.border }]}>
-                                <Text style={[styles.panoramicTagText, { color: theme.muted }]} numberOfLines={1}>
-                                  {t}
-                                </Text>
-                              </View>
-                            ))}
-                          </View>
-                          <View style={[styles.panoramicChatBtn, { backgroundColor: theme.text }]}>
-                            <Ionicons name="chatbubble-ellipses" size={12} color={theme.background} />
-                          </View>
-                        </View>
-                      </View>
-                    </LiquidGlassView>
-                  </Pressable>
-                );
-              }}
+              renderItem={renderPanoramicItem}
               contentContainerStyle={styles.panoramicList}
+              getItemLayout={(_: any, index: number) => ({
+                length: PANORAMIC_CARD_WIDTH + 14,
+                offset: (PANORAMIC_CARD_WIDTH + 14) * index,
+                index,
+              })}
+              initialNumToRender={3}
+              maxToRenderPerBatch={4}
+              windowSize={5}
             />
           </View>
         )}
@@ -1903,72 +2061,23 @@ export default function DiscoverScreen() {
               ))}
             </View>
           ) : (
-            <View style={styles.exploreGrid}>
-              {filteredCharacters.map((char) => {
-                const charImage = char.coverUrl || char.avatarUrl;
-                const accent = char.accent || '#0A84FF';
-                return (
-                  <Pressable
-                    key={`explore-grid-${char.id}`}
-                    onPress={() => {
-                      triggerHaptic('light');
-                      router.push(`/chat/${char.id}`);
-                    }}
-                    style={({ pressed }) => [
-                      styles.exploreCardWrap,
-                      pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-                    ]}
-                  >
-                    <LiquidGlassView style={styles.exploreCard} borderRadius={20} intensity={30} elevated>
-                      <View style={styles.exploreCardImageWrap}>
-                        <DynamicCharacterImage
-                          character={char}
-                          preferCover
-                          style={styles.exploreCardImage}
-                          contentFit="cover"
-                          contentPosition="top"
-                          transition={200}
-                        />
-                        <LinearGradient
-                          colors={['rgba(0,0,0,0.4)', 'transparent', 'rgba(0,0,0,0.88)']}
-                          style={StyleSheet.absoluteFill}
-                          start={{ x: 0.5, y: 0 }}
-                          end={{ x: 0.5, y: 1 }}
-                        />
-                        {/* Top Universe Badge */}
-                        <View style={[styles.exploreUniverseBadge, { backgroundColor: accent + 'EE' }]}>
-                          <Text style={styles.exploreUniverseBadgeText} numberOfLines={1}>
-                            {(char.series || char.category || 'LEGEND').toUpperCase()}
-                          </Text>
-                        </View>
-                        {/* Online Status Glow */}
-                        <View style={styles.exploreOnlineDot} />
-                      </View>
-
-                      {/* Card Content */}
-                      <View style={styles.exploreCardContent}>
-                        <Text style={[styles.exploreCardName, { color: theme.text }]} numberOfLines={1}>
-                          {char.name}
-                        </Text>
-                        <Text style={[styles.exploreCardRole, { color: theme.secondary }]} numberOfLines={1}>
-                          {char.role}
-                        </Text>
-                        <Text style={[styles.exploreCardSnippet, { color: theme.muted }]} numberOfLines={2}>
-                          "{char.greeting || char.shortDescription || 'An authentic saga awaits.'}"
-                        </Text>
-                        <View style={[styles.exploreConnectPill, { backgroundColor: theme.surfaceSecondary }]}>
-                          <Ionicons name="chatbubble" size={11} color={theme.text} style={{ marginRight: 4 }} />
-                          <Text style={[styles.exploreConnectText, { color: theme.text }]}>
-                            Connect
-                          </Text>
-                          <Ionicons name="chevron-forward" size={12} color={theme.muted} style={{ marginLeft: 'auto' }} />
-                        </View>
-                      </View>
-                    </LiquidGlassView>
-                  </Pressable>
-                );
+            <FlatList
+              data={filteredCharacters}
+              numColumns={2}
+              keyExtractor={(item) => `explore-grid-${item.id}`}
+              renderItem={renderExploreItem}
+              scrollEnabled={false}
+              columnWrapperStyle={styles.exploreGrid}
+              getItemLayout={(_: any, index: number) => ({
+                length: EXPLORE_CARD_HEIGHT + 12,
+                offset: (EXPLORE_CARD_HEIGHT + 12) * Math.floor(index / 2),
+                index,
               })}
-            </View>
+              initialNumToRender={6}
+              maxToRenderPerBatch={6}
+              windowSize={5}
+              removeClippedSubviews
+            />
           )}
         </View>
 
@@ -2614,6 +2723,30 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
   },
+  prophecyDateBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 159, 10, 0.14)',
+  },
+  prophecyDateText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#FF9F0A',
+    letterSpacing: 0.2,
+  },
+  prophecyTagPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 5,
+    backgroundColor: 'rgba(255, 159, 10, 0.12)',
+  },
+  prophecyTagText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#FF9F0A',
+    letterSpacing: 0.3,
+  },
   prophecyNextBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2686,19 +2819,45 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 220,
+    height: 340,
   },
 
   // Netflix Portrait Card
-  netflixPortraitContainer: {
-    marginBottom: 18,
+  netflixSpotlightCell: {
+    width: SPOTLIGHT_ITEM_WIDTH,
+    paddingVertical: 10,
+    paddingHorizontal: 2,
+  },
+  netflixPortraitShadowWrapper: {
+    borderRadius: 24,
+    marginBottom: 8,
+  },
+  netflixShadowDark: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.65,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  netflixShadowLight: {
+    // Rich, luminous floating drop shadow in light theme
+    shadowColor: '#120D26',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
+    elevation: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+  },
+  netflixPortraitInner: {
     borderRadius: 24,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
-    elevation: 10,
+    backgroundColor: '#000000',
+  },
+  netflixPortraitContainer: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: '#000000',
   },
   netflixPortraitImage: {
     width: '100%',
