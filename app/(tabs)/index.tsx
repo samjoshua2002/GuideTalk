@@ -28,8 +28,16 @@ import { fetchCharacters, listConversations, ConversationSummary, fetchRecommend
 import { LiquidGlassView } from '@/src/components/LiquidGlassView';
 import { GlowButton } from '@/src/components/GlowButton';
 import { AuthModal } from '@/src/components/AuthModal';
+import { NotificationsModal } from '@/src/components/NotificationsModal';
 import { OnboardingStoryboard } from '@/src/components/OnboardingStoryboard';
 import { triggerHaptic } from '@/src/lib/haptics';
+import {
+  getInAppNotifications,
+  scheduleHourlyCompanionReminder,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  InAppNotification,
+} from '@/src/lib/notificationService';
 import { getHiddenRecentIds, subscribeToFavorites, getFavoriteIds } from '@/src/lib/favorites';
 import { getInteractedCharacterIds } from '@/src/lib/activityTracker';
 import { DynamicCharacterImage } from '@/src/lib/dynamicImageService';
@@ -248,6 +256,8 @@ export default function DiscoverScreen() {
     Array<{ character: Character; lastMessage?: string; updatedAt: string }>
   >([]);
   const [favoriteCharacters, setFavoriteCharacters] = useState<Character[]>([]);
+  const [showNotificationsModal, setShowNotificationsModal] = useState(false);
+  const [notificationsList, setNotificationsList] = useState<InAppNotification[]>([]);
 
   const loadFavorites = useCallback(async () => {
     try {
@@ -266,6 +276,21 @@ export default function DiscoverScreen() {
       setFavoriteCharacters([]);
     }
   }, [user?.id]);
+
+  useEffect(() => {
+    let activeChars: Character[] = favoriteCharacters;
+    if (activeChars.length === 0 && activityList.length > 0) {
+      activeChars = activityList.map((a) => a.character);
+    }
+    if (activeChars.length === 0) {
+      activeChars = getAllBuiltinCharacters().slice(0, 3);
+    }
+    const currentName = user?.name || user?.username || 'there';
+    getInAppNotifications(activeChars, currentName).then((notifs) => {
+      setNotificationsList(notifs);
+      scheduleHourlyCompanionReminder(activeChars, currentName);
+    });
+  }, [favoriteCharacters, activityList, user]);
 
   const loadActivity = async () => {
     try {
@@ -1389,20 +1414,19 @@ export default function DiscoverScreen() {
               </Pressable>
               <Pressable
                 onPress={() => {
-                  if (user) {
-                    router.push('/(tabs)/profile');
-                  } else {
-                    setShowAuthModal(true);
-                  }
+                  triggerHaptic();
+                  setShowNotificationsModal(true);
                 }}
-                accessibilityLabel="User profile"
+                accessibilityLabel="Notifications"
                 style={[
                   styles.iconButton,
-                  { backgroundColor: theme.surfaceSolid, borderColor: theme.border },
-                  user && { borderColor: theme.borderActive },
+                  { backgroundColor: theme.surfaceSolid, borderColor: theme.border, position: 'relative' },
                 ]}
               >
-                <Ionicons name={user ? 'person' : 'person-outline'} size={19} color={user ? theme.text : theme.secondary} />
+                <Ionicons name="notifications-outline" size={19} color={theme.text} />
+                {notificationsList.some((n) => n.unread) && (
+                  <View style={styles.notifBadgeDot} />
+                )}
               </Pressable>
             </View>
           </View>
@@ -2147,6 +2171,22 @@ export default function DiscoverScreen() {
       />
 
       <AuthModal visible={showAuthModal} onClose={() => setShowAuthModal(false)} />
+
+      <NotificationsModal
+        visible={showNotificationsModal}
+        onClose={() => setShowNotificationsModal(false)}
+        notifications={notificationsList}
+        onMarkAllRead={async () => {
+          await markAllNotificationsAsRead(notificationsList.map((n) => n.id));
+          setNotificationsList((prev) => prev.map((n) => ({ ...n, unread: false })));
+        }}
+        onSelectNotification={async (notif) => {
+          await markNotificationAsRead(notif.id);
+          setNotificationsList((prev) =>
+            prev.map((n) => (n.id === notif.id ? { ...n, unread: false } : n))
+          );
+        }}
+      />
     </SafeAreaView>
   </View>
   );
@@ -2188,6 +2228,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
+  },
+  notifBadgeDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FF3B30',
   },
   searchBar: {
     flexDirection: 'row',

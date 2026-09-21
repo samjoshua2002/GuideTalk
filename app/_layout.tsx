@@ -1,13 +1,25 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as Notifications from 'expo-notifications';
 import { ThemeProvider, useTheme } from '@/src/context/ThemeContext';
 import { AuthProvider, useAuth } from '@/src/context/AuthContext';
 
 function RootNav() {
+  const router = useRouter();
   const { theme, isDark } = useTheme();
   const { isLoading } = useAuth();
+
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response?.notification?.request?.content?.data;
+      if (data?.type === 'character_chat' && data?.characterId) {
+        router.push(`/chat/${data.characterId}`);
+      }
+    });
+    return () => sub.remove();
+  }, [router]);
 
   if (isLoading) {
     return (
