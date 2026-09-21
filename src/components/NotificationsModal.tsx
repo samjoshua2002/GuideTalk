@@ -16,7 +16,7 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/src/context/ThemeContext';
 import { LiquidGlassView } from './LiquidGlassView';
-import { InAppNotification, sendInstantTestNotification } from '@/src/lib/notificationService';
+import { InAppNotification } from '@/src/lib/notificationService';
 import { triggerHaptic } from '@/src/lib/haptics';
 
 interface NotificationsModalProps {
@@ -210,17 +210,6 @@ export function NotificationsModal({
   const router = useRouter();
   const { theme, isDark } = useTheme();
   const [filter, setFilter] = useState<'all' | 'companions' | 'updates'>('all');
-  const [testPushScheduled, setTestPushScheduled] = useState(false);
-
-  const handleTestPush = async () => {
-    triggerHaptic();
-    const companion = notifications.find((n) => n.type === 'companion_reminder');
-    const charName = companion?.characterName || 'Gojo Satoru';
-    const charId = companion?.characterId || 'char-gojo-1';
-    await sendInstantTestNotification(charName, charId, userName || 'friend');
-    setTestPushScheduled(true);
-    setTimeout(() => setTestPushScheduled(false), 6000);
-  };
 
   const filteredList = notifications.filter((item) => {
     if (filter === 'companions') return item.type === 'companion_reminder';
@@ -348,56 +337,6 @@ export function NotificationsModal({
               );
             })}
           </View>
-
-          {/* Swipe Hint Banner */}
-          <View
-            style={[
-              styles.infoBanner,
-              {
-                backgroundColor: isDark ? 'rgba(244,205,42,0.1)' : 'rgba(244,205,42,0.08)',
-                borderColor: 'rgba(244,205,42,0.25)',
-              },
-            ]}
-          >
-            <Ionicons name="swap-horizontal-outline" size={15} color="#F4CD2A" />
-            <Text style={[styles.infoBannerText, { color: theme.text }]}>
-              Slide left on any card or tap ✕ to clear. Tap "Clear All" to wipe all alerts.
-            </Text>
-          </View>
-
-          {/* Instant Android Notification Test Action */}
-          <Pressable
-            onPress={handleTestPush}
-            style={({ pressed }) => [
-              styles.testPushBar,
-              {
-                backgroundColor: testPushScheduled
-                  ? 'rgba(52, 199, 89, 0.15)'
-                  : isDark
-                  ? 'rgba(255,255,255,0.06)'
-                  : 'rgba(0,0,0,0.04)',
-                borderColor: testPushScheduled ? '#34C759' : theme.border,
-                opacity: pressed ? 0.8 : 1,
-              },
-            ]}
-          >
-            <Ionicons
-              name={testPushScheduled ? 'checkmark-circle' : 'paper-plane-outline'}
-              size={14}
-              color={testPushScheduled ? '#34C759' : '#F4CD2A'}
-            />
-            <Text
-              style={[
-                styles.testPushText,
-                { color: testPushScheduled ? '#34C759' : theme.text },
-              ]}
-              numberOfLines={1}
-            >
-              {testPushScheduled
-                ? 'Push scheduled in 5s! Close/minimize app to see it in Android shade.'
-                : 'Send 5s Test Push (Close app to see Android notification)'}
-            </Text>
-          </Pressable>
 
           {/* Notifications Scroll */}
           <ScrollView
@@ -543,38 +482,6 @@ const styles = StyleSheet.create({
   filterChipText: {
     fontSize: 11.5,
     fontWeight: '600',
-  },
-  infoBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  infoBannerText: {
-    fontSize: 11.5,
-    fontWeight: '500',
-    flex: 1,
-  },
-  testPushBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginHorizontal: 16,
-    marginBottom: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  testPushText: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    flex: 1,
   },
   listContainer: {
     paddingHorizontal: 16,

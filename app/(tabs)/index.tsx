@@ -37,6 +37,7 @@ import { triggerHaptic } from '@/src/lib/haptics';
 import {
   getInAppNotifications,
   scheduleHourlyCompanionReminder,
+  cancelCompanionReminders,
   markNotificationAsRead,
   markAllNotificationsAsRead,
   dismissNotification,
@@ -297,29 +298,34 @@ export default function DiscoverScreen() {
   }, [user?.id]);
 
   useEffect(() => {
-    let activeChars: Character[] = favoriteCharacters;
-    if (activeChars.length === 0 && activityList.length > 0) {
-      activeChars = activityList.map((a) => a.character);
-    }
-    if (activeChars.length === 0) {
-      activeChars = getAllBuiltinCharacters().slice(0, 3);
-    }
-    const currentName = user?.name || user?.username || 'there';
-    getInAppNotifications(activeChars, currentName).then((notifs) => {
+    // STRICT: Only send companion reminders for characters the user explicitly liked/favorited!
+    const likedChars: Character[] = favoriteCharacters || [];
+    const currentName = user?.name || user?.username || 'friend';
+
+    getInAppNotifications(likedChars, currentName).then((notifs) => {
       setNotificationsList(notifs);
-      scheduleHourlyCompanionReminder(activeChars, currentName);
     });
+
+    if (likedChars.length > 0) {
+      scheduleHourlyCompanionReminder(likedChars, currentName);
+    } else {
+      cancelCompanionReminders();
+    }
 
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'background' || nextAppState === 'inactive') {
-        scheduleHourlyCompanionReminder(activeChars, currentName);
+        if (likedChars.length > 0) {
+          scheduleHourlyCompanionReminder(likedChars, currentName);
+        } else {
+          cancelCompanionReminders();
+        }
       }
     });
 
     return () => {
       subscription.remove();
     };
-  }, [favoriteCharacters, activityList, user]);
+  }, [favoriteCharacters, user]);
 
   const loadActivity = async () => {
     try {

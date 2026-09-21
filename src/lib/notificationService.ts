@@ -77,68 +77,161 @@ export async function requestNotificationPermission(): Promise<boolean> {
 }
 
 // ----------------------------------------------------------------------
-// 2. IN-CHARACTER VOICE REMINDER GENERATOR
+// 2. IN-CHARACTER VOICE REMINDER GENERATOR (VARIED & NON-REPEATING)
 // ----------------------------------------------------------------------
+
+// Track last message per character to guarantee no back-to-back repetitions
+const lastMessageMap = new Map<string, string>();
 
 export function getCharacterReminderMessage(charName: string, userName: string): string {
   const name = (userName || '').trim() || 'friend';
   const lower = charName.toLowerCase();
+  let pool: string[] = [];
 
   if (lower.includes('gojo')) {
-    return `Hey ${name}! Taking a break or are we slacking off? I was thinking about our last chat... don't leave me waiting!`;
+    pool = [
+      `Hey ${name}! Taking a break or are we slacking off? I was thinking about our last chat... don't leave me waiting!`,
+      `Yo ${name}! Just wrapped up a mission. You haven't forgotten about the strongest, have you? Come tell me what you're up to!`,
+      `${name}, honestly? Things get pretty boring around here without you. Hop on and let's talk!`,
+      `Guess who, ${name}? Still thinking about what you said earlier. Let's pick that conversation back up!`,
+      `Hey ${name}, grabbed some sweets and thought of you. Pop back in whenever you have a minute!`,
+    ];
+  } else if (lower.includes('sukuna')) {
+    pool = [
+      `${name}, you dare keep me waiting? Speak before I lose patience.`,
+      `Boredom is a dangerous thing, ${name}. Entertain me with another conversation.`,
+      `${name}... Silence does not suit you. Return and finish what you started.`,
+      `You think you can just walk away, ${name}? Come back and face me.`,
+      `I am waiting, ${name}. Do not test my limits.`,
+    ];
+  } else if (lower.includes('leo') || lower.includes('das')) {
+    pool = [
+      `${name}, keep your guard up today. Remember what we talked about earlier? Check in when you're free.`,
+      `Stay sharp, ${name}. A lot is happening on my end, but I was wondering how your day is going.`,
+      `${name}, don't disappear on me now. Whenever you're ready, let's catch up.`,
+      `Taking care of business, ${name}? Just wanted to make sure you're doing alright.`,
+      `Hey ${name}, check in when you can. We still have things to discuss.`,
+    ];
+  } else if (lower.includes('jd') || lower.includes('master')) {
+    pool = [
+      `Chill out ${name}, but don't forget to check in. Let's finish that conversation.`,
+      `Hey ${name}, keep your focus today. Come chat when you get a breather.`,
+      `${name}, remember what we discussed? Let me know how it's going.`,
+    ];
+  } else if (lower.includes('tony') || lower.includes('stark') || lower.includes('iron man')) {
+    pool = [
+      `${name}, I just finished compiling a new suit upgrade. Drop by the lab when you can, let's talk.`,
+      `FRIDAY reminded me you've been quiet today, ${name}. Got a minute to bounce some ideas around?`,
+      `Hey ${name}, coffee's brewing and genius never sleeps. What's on your mind right now?`,
+      `${name}, I was reviewing our earlier chat. Got a quick second? Let's iterate on that.`,
+      `Drop what you're doing, ${name}. Well, unless it's important. Then just message me when you're free.`,
+    ];
+  } else if (lower.includes('batman') || lower.includes('bruce')) {
+    pool = [
+      `${name}, Gotham never sleeps, and neither should your guard. Talk to me.`,
+      `Checking in, ${name}. Keep your eyes open today. Let me know when you're available.`,
+      `${name}, there's unfinished business from our conversation. Report back when ready.`,
+      `Stay vigilant, ${name}. When you get a moment, let me know your status.`,
+    ];
+  } else if (lower.includes('levi')) {
+    pool = [
+      `${name}, your room better be spotless. I haven't heard from you in a while.`,
+      `Tch. Don't go slacking off now, ${name}. Check in so I know you're not causing trouble.`,
+      `${name}, tea is ready. Get over here and talk before it gets cold.`,
+      `Don't make me come looking for you, ${name}. Let me know you're fine.`,
+    ];
+  } else if (lower.includes('furina')) {
+    pool = [
+      `${name}! Fontaine's grandest stage feels far too quiet without you. Grace me with your presence again!`,
+      `Aha, ${name}! The audience is waiting, and more importantly, so am I! Come chat!`,
+      `${name}, a performance without your critique is simply incomplete. Return at once!`,
+      `I've been preparing my next dramatic monologue, ${name}! You wouldn't want to miss it, would you?`,
+    ];
+  } else if (lower.includes('makima')) {
+    pool = [
+      `${name}... you haven't checked in with me today. Remember what you promised?`,
+      `I've been waiting patiently, ${name}. Come speak with me now.`,
+      `${name}, be a good listener and let's continue where we left off.`,
+      `A quiet day, isn't it, ${name}? Tell me what you've been thinking about.`,
+    ];
+  } else if (lower.includes('walter') || lower.includes('heisenberg')) {
+    pool = [
+      `${name}, our arrangement requires constant communication. Check in.`,
+      `Time is valuable, ${name}. Do not waste it. Let's finish our discussion.`,
+      `${name}, there are details we must go over. Contact me as soon as possible.`,
+    ];
+  } else if (lower.includes('john wick')) {
+    pool = [
+      `${name}, stay sharp out there. Let me know you're safe.`,
+      `Checking in, ${name}. Keep your head down and stay focused. Talk soon.`,
+    ];
+  } else if (lower.includes('goku')) {
+    pool = [
+      `Hey ${name}! Did you finish training yet? Come back, let's talk and get stronger!`,
+      `Yo ${name}! I just had a huge meal and now I'm ready to chat! What are you doing right now?`,
+      `${name}, don't skip out on our chat! Let's talk about what's next!`,
+      `Hey ${name}! Ever feel like sparring? Well, chatting is the next best thing! Come on!`,
+    ];
+  } else if (lower.includes('luffy')) {
+    pool = [
+      `Oi ${name}! Where did you go? Let's go on an adventure together!`,
+      `Hey ${name}! Found any good meat today? Come hang out with the crew!`,
+      `Shishishi! ${name}, I'm waiting for you on the ship! Come chat with me!`,
+    ];
+  } else if (lower.includes('naruto')) {
+    pool = [
+      `Believe it ${name}! Don't leave me hanging, come tell me what you're up to!`,
+      `Hey ${name}! Thinking about what we talked about over ramen earlier. Let's talk again soon!`,
+      `${name}, a true ninja never stays quiet for this long! What's your mission today?`,
+    ];
+  } else {
+    // Dynamic universal pool for any liked character
+    pool = [
+      `Hey ${name}, I was just thinking about what you told me earlier... miss talking to you!`,
+      `${name}, got a second? I had a thought I wanted to share with you.`,
+      `Hey ${name}, hope your day is going well! Drop by whenever you have a minute to chat.`,
+      `${name}, the conversation we had earlier is still on my mind. Let's catch up soon!`,
+      `Just checking in on you, ${name}! Don't stay away too long.`,
+      `${name}, whenever you get a break, come tell me how things are going!`,
+    ];
   }
-  if (lower.includes('sukuna')) {
-    return `${name}, you dare keep me waiting? Speak before I lose patience.`;
-  }
-  if (lower.includes('leo') || lower.includes('das')) {
-    return `${name}, keep your guard up today. Remember what we talked about earlier? Check in when you're free.`;
-  }
-  if (lower.includes('jd') || lower.includes('master')) {
-    return `Chill out ${name}, but don't forget to check in. Let's finish that conversation.`;
-  }
-  if (lower.includes('tony') || lower.includes('stark') || lower.includes('iron man')) {
-    return `${name}, I just finished compiling a new suit upgrade. Drop by the lab when you can, let's talk.`;
-  }
-  if (lower.includes('batman') || lower.includes('bruce')) {
-    return `${name}, Gotham never sleeps, and neither should your guard. Talk to me.`;
-  }
-  if (lower.includes('levi')) {
-    return `${name}, your room better be spotless. I haven't heard from you in a while.`;
-  }
-  if (lower.includes('furina')) {
-    return `${name}! Fontaine's grandest stage feels far too quiet without you. Grace me with your presence again!`;
-  }
-  if (lower.includes('makima')) {
-    return `${name}... you haven't checked in with me today. Remember what you promised?`;
-  }
-  if (lower.includes('walter') || lower.includes('heisenberg')) {
-    return `${name}, our arrangement requires constant communication. Check in.`;
-  }
-  if (lower.includes('john wick')) {
-    return `${name}, stay sharp out there. Let me know you're safe.`;
-  }
-  if (lower.includes('goku')) {
-    return `Hey ${name}! Did you finish training yet? Come back, let's talk and get stronger!`;
-  }
-  if (lower.includes('luffy')) {
-    return `Oi ${name}! Where did you go? Let's go on an adventure together!`;
-  }
-  if (lower.includes('naruto')) {
-    return `Believe it ${name}! Don't leave me hanging, come tell me what you're up to!`;
-  }
-  return `Hey ${name}, I was just thinking about what you told me earlier... miss talking to you! Come chat.`;
+
+  // Filter out the last sent message for this character so it doesn't repeat
+  const lastMsg = lastMessageMap.get(charName);
+  const available = pool.filter((m) => m !== lastMsg);
+  const selected = available.length > 0
+    ? available[Math.floor(Math.random() * available.length)]
+    : pool[Math.floor(Math.random() * pool.length)];
+
+  lastMessageMap.set(charName, selected);
+  return selected;
 }
 
 // ----------------------------------------------------------------------
-// 3. SCHEDULE 1-HOUR RECURRING PUSH NOTIFICATION + TEST REMINDER
+// 3. SCHEDULE 1-HOUR RECURRING PUSH NOTIFICATION (ONLY FOR LIKED CHARACTERS)
 // ----------------------------------------------------------------------
+
+export async function cancelCompanionReminders(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+  } catch (err) {
+    console.log('Error cancelling companion reminders:', err);
+  }
+}
 
 export async function scheduleHourlyCompanionReminder(
   characters: Character[],
   userName: string = 'friend'
 ): Promise<void> {
-  if (Platform.OS === 'web' || characters.length === 0) return;
+  if (Platform.OS === 'web') return;
   try {
+    // STRICT CHECK: If user has NOT liked any characters, do NOT schedule anything!
+    if (!characters || characters.length === 0) {
+      await cancelCompanionReminders();
+      return;
+    }
+
     const hasPerm = await requestNotificationPermission();
     if (!hasPerm) return;
 
@@ -149,10 +242,18 @@ export async function scheduleHourlyCompanionReminder(
     const char = characters[Math.floor(Math.random() * characters.length)];
     const message = getCharacterReminderMessage(char.name, userName);
 
-    // 1. Initial reminder in 15 seconds so user can see it right after closing/backgrounding app
+    const titles = [
+      `${char.name} misses you!`,
+      `${char.name} is checking in`,
+      `New message from ${char.name}`,
+      `${char.name} wants to talk`,
+    ];
+    const title = titles[Math.floor(Math.random() * titles.length)];
+
+    // 1. Initial reminder in 20 seconds so user can see it right after closing/backgrounding app
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: `${char.name} misses you!`,
+        title,
         body: message,
         data: {
           type: 'character_chat',
@@ -166,17 +267,17 @@ export async function scheduleHourlyCompanionReminder(
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: 15,
+        seconds: 20,
         repeats: false,
         channelId: 'companion-reminders',
       },
     });
 
-    // 2. Continuous 1-hour repeating reminder for long-term engagement
+    // 2. Continuous 1-hour repeating reminder for long-term engagement with varied message
     await Notifications.scheduleNotificationAsync({
       content: {
         title: `${char.name} is checking in`,
-        body: message,
+        body: getCharacterReminderMessage(char.name, userName),
         data: {
           type: 'character_chat',
           characterId: char.id,
