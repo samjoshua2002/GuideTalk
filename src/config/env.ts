@@ -28,9 +28,11 @@ function resolveApiUrl(): string {
 
 export const env = {
   apiUrl: resolveApiUrl(),
-  azureEndpoint: process.env.EXPO_PUBLIC_AZURE_OPENAI_ENDPOINT || '',
+  azureEndpoint:
+    process.env.EXPO_PUBLIC_AZURE_OPENAI_ENDPOINT ||
+    'https://qbssazureopenai.openai.azure.com/',
   azureApiKey: process.env.EXPO_PUBLIC_AZURE_OPENAI_API_KEY || '',
   azureApiVersion: process.env.EXPO_PUBLIC_AZURE_OPENAI_API_VERSION || '2025-01-01-preview',
-  azureDefaultDeployment: process.env.EXPO_PUBLIC_AZURE_OPENAI_DEPLOYMENT || '',
+  azureDefaultDeployment: process.env.EXPO_PUBLIC_AZURE_OPENAI_DEPLOYMENT || 'gpt-5.6-luna',
   appEnvironment: process.env.EXPO_PUBLIC_APP_ENV || 'development',
 } as const;

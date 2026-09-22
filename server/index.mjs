@@ -108,7 +108,8 @@ const isObjectId = (value) => typeof value === 'string' && ObjectId.isValid(valu
 // Azure OpenAI caller helper
 async function callAzureOpenAI({ deployment = defaultDeployment, messages, maxTokens = 1200 }) {
   const targetDeployment = deployment || 'gpt-5.6-luna';
-  const azureUrl = `${endpoint}/openai/deployments/${encodeURIComponent(targetDeployment)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
+  const cleanEndpoint = endpoint.replace(/\/+$/, '');
+  const azureUrl = `${cleanEndpoint}/openai/deployments/${encodeURIComponent(targetDeployment)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
 
   const response = await fetch(azureUrl, {
     method: 'POST',
@@ -275,22 +276,129 @@ const MASTER_CHARACTER_VAULT = {
     candidates: [
       'https://safebooru.org/images/4250/2324f92d47f9f257a44f5728a2b53eb63a94aaee.jpg'
     ]
+  },
+  'tony stark': {
+    name: 'Tony Stark',
+    series: 'Marvel',
+    imageUrl: 'https://upload.wikimedia.org/wikipedia/en/f/f2/Robert_Downey_Jr._as_Tony_Stark_in_Avengers_Infinity_War.jpg',
+    candidates: [
+      'https://upload.wikimedia.org/wikipedia/en/f/f2/Robert_Downey_Jr._as_Tony_Stark_in_Avengers_Infinity_War.jpg',
+      'https://upload.wikimedia.org/wikipedia/en/4/47/Iron_Man_%28circa_2018%29.png'
+    ]
+  },
+  'iron man': {
+    name: 'Iron Man',
+    series: 'Marvel',
+    imageUrl: 'https://upload.wikimedia.org/wikipedia/en/f/f2/Robert_Downey_Jr._as_Tony_Stark_in_Avengers_Infinity_War.jpg',
+    candidates: [
+      'https://upload.wikimedia.org/wikipedia/en/f/f2/Robert_Downey_Jr._as_Tony_Stark_in_Avengers_Infinity_War.jpg',
+      'https://upload.wikimedia.org/wikipedia/en/4/47/Iron_Man_%28circa_2018%29.png'
+    ]
+  },
+  batman: {
+    name: 'Batman',
+    series: 'DC Comics',
+    imageUrl: 'https://upload.wikimedia.org/wikipedia/en/c/c7/Batman_Infobox.jpg',
+    candidates: [
+      'https://upload.wikimedia.org/wikipedia/en/c/c7/Batman_Infobox.jpg',
+      'https://thumb.wikimedia.org/wikipedia/commons/thumb/2/21/Batman_live_action_actors.png/1000px-Batman_live_action_actors.png'
+    ]
+  },
+  joker: {
+    name: 'The Joker',
+    series: 'DC Comics',
+    imageUrl: 'https://upload.wikimedia.org/wikipedia/en/5/5f/Batman_Three_Jokers.jpg',
+    candidates: [
+      'https://upload.wikimedia.org/wikipedia/en/5/5f/Batman_Three_Jokers.jpg',
+      'https://upload.wikimedia.org/wikipedia/en/9/90/HeathJoker.png'
+    ]
+  },
+  'walter white': {
+    name: 'Walter White',
+    series: 'Breaking Bad',
+    imageUrl: 'https://upload.wikimedia.org/wikipedia/en/0/03/Walter_White_S5B.png',
+    candidates: [
+      'https://upload.wikimedia.org/wikipedia/en/0/03/Walter_White_S5B.png'
+    ]
+  },
+  'thomas shelby': {
+    name: 'Thomas Shelby',
+    series: 'Peaky Blinders',
+    imageUrl: 'https://upload.wikimedia.org/wikipedia/en/8/87/Tommy_Shelby_Peaky_Blinders.jpg',
+    candidates: [
+      'https://upload.wikimedia.org/wikipedia/en/8/87/Tommy_Shelby_Peaky_Blinders.jpg'
+    ]
+  },
+  'sherlock holmes': {
+    name: 'Sherlock Holmes',
+    series: 'Classic Literature',
+    imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/cd/Sherlock_Holmes_Portrait_Paget.jpg',
+    candidates: [
+      'https://upload.wikimedia.org/wikipedia/commons/c/cd/Sherlock_Holmes_Portrait_Paget.jpg'
+    ]
+  },
+  'elon musk': {
+    name: 'Elon Musk',
+    series: 'Visionary Leaders',
+    imageUrl: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5e/Elon_Musk_-_54820081119_%28cropped%29.jpg/1000px-Elon_Musk_-_54820081119_%28cropped%29.jpg',
+    candidates: [
+      'https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5e/Elon_Musk_-_54820081119_%28cropped%29.jpg/1000px-Elon_Musk_-_54820081119_%28cropped%29.jpg'
+    ]
+  },
+  'albert einstein': {
+    name: 'Albert Einstein',
+    series: 'Science & History',
+    imageUrl: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/2/28/Albert_Einstein_Head_cleaned.jpg/1000px-Albert_Einstein_Head_cleaned.jpg',
+    candidates: [
+      'https://thumb.wikimedia.org/wikipedia/commons/thumb/2/28/Albert_Einstein_Head_cleaned.jpg/1000px-Albert_Einstein_Head_cleaned.jpg'
+    ]
+  },
+  vijay: {
+    name: 'Vijay',
+    series: 'Cinema',
+    imageUrl: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/06/C._Joseph_Vijay_%28cropped%29.jpg/1000px-C._Joseph_Vijay_%28cropped%29.jpg',
+    candidates: [
+      'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/06/C._Joseph_Vijay_%28cropped%29.jpg/1000px-C._Joseph_Vijay_%28cropped%29.jpg'
+    ]
+  },
+  'shah rukh khan': {
+    name: 'Shah Rukh Khan',
+    series: 'Bollywood',
+    imageUrl: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6e/Shah_Rukh_Khan_graces_the_launch_of_the_new_Santro.jpg/1000px-Shah_Rukh_Khan_graces_the_launch_of_the_new_Santro.jpg',
+    candidates: [
+      'https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6e/Shah_Rukh_Khan_graces_the_launch_of_the_new_Santro.jpg/1000px-Shah_Rukh_Khan_graces_the_launch_of_the_new_Santro.jpg'
+    ]
+  },
+  'cristiano ronaldo': {
+    name: 'Cristiano Ronaldo',
+    series: 'Sports Legends',
+    imageUrl: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/2/26/Cristiano_Ronaldo_Croatia_v_Portugal_2_July_2026-075_%28cropped%29.jpg/1000px-Cristiano_Ronaldo_Croatia_v_Portugal_2_July_2026-075_%28cropped%29.jpg',
+    candidates: [
+      'https://thumb.wikimedia.org/wikipedia/commons/thumb/2/26/Cristiano_Ronaldo_Croatia_v_Portugal_2_July_2026-075_%28cropped%29.jpg/1000px-Cristiano_Ronaldo_Croatia_v_Portugal_2_July_2026-075_%28cropped%29.jpg'
+    ]
   }
 };
 
-// Blocklist of garbage URL terms
+// Blocklist of non-portrait, document, or logo terms
 const IMAGE_BLOCKLIST = [
   '.svg', 'amazon', 'imdb', 'icon', 'logo', 'lyrics', 'chord', 'guitar',
   'tab', 'song', 'music', 'sheet', 'spotify', 'soundcloud', 'deezer',
-  'genius.com', 'azlyrics', 'metrolyrics', 'preview', 'thumb', 'questionmark',
-  'apple-touch-icon', 'SAND_Maurice'
+  'genius.com', 'azlyrics', 'metrolyrics', 'questionmark',
+  'apple-touch-icon', 'SAND_Maurice',
+  'flag', 'coat_of_arms', 'emblem', 'seal', 'crest', 'insignia', 'symbol',
+  'document', 'manuscript', 'paper', 'letter', 'certificate', 'treaty', 'newspaper',
+  'map', 'chart', 'diagram', 'graph', 'stamp', 'signature', 'autograph',
+  'coin', 'currency', 'banknote', 'passport', 'receipt',
+  'building', 'stadium', 'grave', 'tomb', 'monument', 'memorial',
+  'book_cover', 'poster', 'soundtrack', 'discography',
+  'transparent', 'blank', 'placeholder', 'no-image', 'default_avatar'
 ];
 
 function isValidCharacterImage(url) {
   if (!url || typeof url !== 'string' || !url.startsWith('http')) return false;
   const lower = url.toLowerCase();
   if (IMAGE_BLOCKLIST.some((bad) => lower.includes(bad))) return false;
-  return !!lower.match(/\.(?:jpg|jpeg|png|webp)/i) || lower.includes('anilist.co');
+  return !!lower.match(/\.(?:jpg|jpeg|png|webp)/i) || lower.includes('wikimedia.org') || lower.includes('anilist.co');
 }
 
 // 1. Fetch Official Art from AniList GraphQL (Fast, Free, Gorgeous 1080p)
@@ -358,7 +466,57 @@ async function fetchKitsuArt(name) {
   return null;
 }
 
-// 3. Main Multi-Tier HD Character Art Fetcher
+// 3. Fetch Real-Life & Cinema Character Portrait from Wikipedia & Wikimedia Commons
+async function fetchWikipediaCharacterArt(name, series = '') {
+  const cleanName = (name || '').trim();
+  const searchQueries = [
+    cleanName,
+    series ? `${cleanName} ${series}` : null,
+    `${cleanName} character`,
+  ].filter(Boolean);
+
+  const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' };
+
+  for (const q of searchQueries) {
+    try {
+      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&srlimit=4&format=json&origin=*`;
+      const sRes = await fetch(searchUrl, { headers, signal: AbortSignal.timeout(4500) });
+      if (!sRes.ok) continue;
+      const sData = await sRes.json();
+      const results = sData?.query?.search || [];
+      const candidates = [];
+
+      for (const item of results) {
+        const title = item.title;
+        const lowerTitle = title.toLowerCase();
+        if (
+          lowerTitle.includes('discography') ||
+          lowerTitle.includes('filmography') ||
+          lowerTitle.includes('list of') ||
+          lowerTitle.includes('season ') ||
+          lowerTitle.includes('episode') ||
+          lowerTitle.includes('album')
+        ) continue;
+
+        const sumUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+        const sumRes = await fetch(sumUrl, { headers, signal: AbortSignal.timeout(3500) });
+        if (!sumRes.ok) continue;
+        const sumData = await sumRes.json();
+        const img = sumData?.originalimage?.source || sumData?.thumbnail?.source;
+        if (img && isValidCharacterImage(img)) {
+          candidates.push(img);
+        }
+      }
+
+      if (candidates.length > 0) {
+        return { imageUrl: candidates[0], candidates, source: 'wikipedia' };
+      }
+    } catch (e) {}
+  }
+  return null;
+}
+
+// 4. Main Multi-Tier HD Character Art Fetcher
 async function fetchCharacterImage(name, series = '', force = false) {
   const cleanName = (name || '').trim();
   const lowerName = cleanName.toLowerCase();
@@ -372,7 +530,7 @@ async function fetchCharacterImage(name, series = '', force = false) {
     return vault.imageUrl;
   }
 
-  // Also check if any key in vault matches partial name (e.g. "gojo" in "satoru gojo")
+  // Check if any key in vault matches partial name (e.g. "tony" in "tony stark", "gojo" in "satoru gojo")
   for (const [vKey, vData] of Object.entries(MASTER_CHARACTER_VAULT)) {
     if (lowerName.includes(vKey) || vKey.includes(lowerName)) {
       if (force && vData.candidates?.length > 1) {
@@ -382,7 +540,16 @@ async function fetchCharacterImage(name, series = '', force = false) {
     }
   }
 
-  // Tier 2: AniList GraphQL Official HD Character Art
+  // Tier 2: Real-Life, Cinema, and Public Figure Portrait (Wikipedia REST API)
+  const wikiArt = await fetchWikipediaCharacterArt(cleanName, series);
+  if (wikiArt?.imageUrl) {
+    if (force && wikiArt.candidates?.length > 1) {
+      return wikiArt.candidates[Math.floor(Math.random() * wikiArt.candidates.length)];
+    }
+    return wikiArt.imageUrl;
+  }
+
+  // Tier 3: AniList GraphQL Official HD Character Art (Anime)
   const anilist = await fetchAniListArt(cleanName);
   if (anilist?.imageUrl) {
     if (force && anilist.candidates?.length > 1) {
@@ -391,11 +558,11 @@ async function fetchCharacterImage(name, series = '', force = false) {
     return anilist.imageUrl;
   }
 
-  // Tier 3: Kitsu Anime Database
+  // Tier 4: Kitsu Anime Database
   const kitsu = await fetchKitsuArt(cleanName);
   if (kitsu?.imageUrl) return kitsu.imageUrl;
 
-  // Tier 4: Jikan API (with short timeout)
+  // Tier 5: Jikan API (with short timeout)
   try {
     const jikanRes = await fetch(
       `https://api.jikan.moe/v4/characters?q=${encodeURIComponent(cleanName)}&limit=3`,
@@ -408,7 +575,7 @@ async function fetchCharacterImage(name, series = '', force = false) {
     }
   } catch {}
 
-  // Tier 5: Safebooru curated tag solo portrait
+  // Tier 6: Safebooru curated tag solo portrait (only if anime-oriented)
   try {
     const tag = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
     const safeUrl = `https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=5&tags=${encodeURIComponent(tag + ' solo')}`;
@@ -417,12 +584,22 @@ async function fetchCharacterImage(name, series = '', force = false) {
       const data = await safeRes.json();
       if (Array.isArray(data) && data.length > 0) {
         const item = data[0];
-        return `https://safebooru.org/images/${item.directory}/${item.image}`;
+        const safeImg = `https://safebooru.org/images/${item.directory}/${item.image}`;
+        if (isValidCharacterImage(safeImg)) return safeImg;
       }
     }
   } catch {}
 
-  return `https://api.dicebear.com/9.x/adventurer/png?seed=${encodeURIComponent(cleanName)}&backgroundColor=1e293b`;
+  // Safe High-Quality Real Portrait Fallback (never a cartoon anime drawing)
+  const portraitFallbacks = [
+    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=800&auto=format&fit=crop&q=80',
+  ];
+  let charCodeSum = 0;
+  for (let i = 0; i < cleanName.length; i++) charCodeSum += cleanName.charCodeAt(i);
+  return portraitFallbacks[charCodeSum % portraitFallbacks.length];
 }
 
 // Fetch multiple clean candidates for instant 0ms look cycling
@@ -441,12 +618,16 @@ async function fetchMultipleCharacterImages(name, series = '', count = 6) {
     }
   }
 
-  // 2. Query AniList & Kitsu in parallel
-  const [aniRes, kitsuRes] = await Promise.allSettled([
+  // 2. Query Wikipedia, AniList & Kitsu in parallel
+  const [wikiRes, aniRes, kitsuRes] = await Promise.allSettled([
+    fetchWikipediaCharacterArt(cleanName, series),
     fetchAniListArt(cleanName),
     fetchKitsuArt(cleanName)
   ]);
 
+  if (wikiRes.status === 'fulfilled' && wikiRes.value?.candidates) {
+    wikiRes.value.candidates.forEach((u) => urls.add(u));
+  }
   if (aniRes.status === 'fulfilled' && aniRes.value?.candidates) {
     aniRes.value.candidates.forEach((u) => urls.add(u));
   }
@@ -462,6 +643,16 @@ const server = http.createServer(async (request, response) => {
 
   const url = new URL(request.url ?? '/', `http://localhost:${port}`);
   const pathname = url.pathname;
+
+  if (request.method === 'GET' && (pathname === '/health' || pathname === '/api/health')) {
+    return sendJson(response, 200, {
+      status: 'healthy',
+      service: 'GuildTalk Backend',
+      version: '1.0.3',
+      uptime: Math.round(process.uptime()),
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   // Extract auth token if provided
   const authHeader = request.headers.authorization;
@@ -850,15 +1041,28 @@ const server = http.createServer(async (request, response) => {
       const cleanQ = (query || '').trim();
       if (!cleanQ) return sendJson(response, 400, { error: 'Search query is required.' });
 
-      // Prompt to create 3 distinct versions, iconic roles, or adaptations of this figure/character
+      // Search matching characters from database as well
+      const dbMatches = await customCharacters
+        .find({
+          $or: [
+            { name: { $regex: cleanQ, $options: 'i' } },
+            { series: { $regex: cleanQ, $options: 'i' } },
+          ],
+        })
+        .limit(6)
+        .toArray()
+        .catch(() => []);
+
+      // Prompt to create 6 to 8 distinct versions, iconic roles, or adaptations of this figure/character
       const prompt = [
         `The user is searching for character or figure: "${cleanQ}". Preferred language/region: ${language || 'any'}.`,
-        `Generate 3 distinct versions, iconic movie roles, or forms of this character/person.`,
+        `Generate 6 to 8 distinct versions, iconic movie/anime/comic roles, historical eras, or forms of this character or person.`,
         `Examples:`,
-        `- For "Vijay": 1. "Leo Das (Leo)" (Lokesh Cinematic Universe cafe owner & deadly gangster), 2. "JD (Master)" (cool irreverent college professor), 3. "Velu (Ghilli)" (passionate kabaddi champion hero).`,
-        `- For "Spider-Man": 1. "Peter Parker (Spider-Man)", 2. "Miles Morales", 3. "Spider-Man 2099".`,
-        `- For "Goku": 1. "Son Goku (Base / Martial Artist)", 2. "Super Saiyan Goku", 3. "Ultra Instinct Goku".`,
-        `Return ONLY a pure JSON array containing exactly 3 objects with keys:`,
+        `- For "Vijay": 1. "Leo Das (Leo)", 2. "JD (Master)", 3. "Velu (Ghilli)", 4. "Rayappan (Bigil)", 5. "Kathiresan (Kaththi)", 6. "Thuppakki Jagdish".`,
+        `- For "Batman": 1. "Bruce Wayne (The Dark Knight)", 2. "Batman (Arkham Knight)", 3. "Batman Beyond (Terry McGinnis)", 4. "The Batman (Robert Pattinson)", 5. "Batman (Animated Series)", 6. "Thomas Wayne (Flashpoint)".`,
+        `- For "Tony Stark": 1. "Tony Stark (Iron Man Mark 85)", 2. "Tony Stark (Billionaire Philanthropist)", 3. "Superior Iron Man", 4. "Hulkbuster Pilot", 5. "Tony Stark (Endgame)", 6. "Iron Man (Bleeding Edge)".`,
+        `- For "Goku": 1. "Son Goku (Base)", 2. "Super Saiyan Goku", 3. "Ultra Instinct Goku", 4. "Super Saiyan 4 Goku", 5. "Goku Black", 6. "Kid Goku".`,
+        `Return ONLY a pure JSON array containing 6 to 8 objects with keys:`,
         `[{"name": "...", "series": "...", "role": "...", "shortDescription": "...", "personality": ["..."], "greeting": "..."}]`,
       ].join('\n');
 
@@ -866,7 +1070,7 @@ const server = http.createServer(async (request, response) => {
         const aiResp = await callAzureOpenAI({
           deployment: 'gpt-5.1-chat',
           messages: [{ role: 'user', content: prompt }],
-          maxTokens: 800,
+          maxTokens: 1400,
         });
         let cleaned = aiResp.trim().replace(/^```json/, '').replace(/```$/, '').trim();
         let candidates = JSON.parse(cleaned);
@@ -874,7 +1078,7 @@ const server = http.createServer(async (request, response) => {
 
         // Fetch distinct real portraits in parallel
         const list = await Promise.all(
-          candidates.slice(0, 3).map(async (c, idx) => {
+          candidates.slice(0, 8).map(async (c, idx) => {
             const searchQuery = `${c.name} ${c.series || ''}`;
             const img = await fetchCharacterImage(searchQuery, c.series);
             return {
@@ -895,6 +1099,25 @@ const server = http.createServer(async (request, response) => {
             };
           })
         );
+
+        // Merge any DB matches
+        for (const dbChar of dbMatches) {
+          if (!list.some((item) => item.name.toLowerCase() === dbChar.name.toLowerCase())) {
+            list.unshift({
+              id: dbChar.id || dbChar._id.toString(),
+              name: dbChar.name,
+              series: dbChar.series || 'Universe',
+              role: dbChar.role || 'Hero',
+              shortDescription: dbChar.shortDescription || '',
+              description: dbChar.description || '',
+              personality: Array.isArray(dbChar.personality) ? dbChar.personality : ['Heroic'],
+              greeting: dbChar.greeting || 'Greetings.',
+              avatarUrl: dbChar.avatarUrl,
+              coverUrl: dbChar.coverUrl || dbChar.avatarUrl,
+              isCustom: true,
+            });
+          }
+        }
 
         return sendJson(response, 200, { candidates: list });
       } catch (err) {
@@ -1015,12 +1238,27 @@ const server = http.createServer(async (request, response) => {
 
             const existing = await customCharacters.findOne({ name: { $regex: new RegExp(`^${c.name.trim()}$`, 'i') } });
             if (existing) {
+              const existingHasDummy = !existing.avatarUrl ||
+                existing.avatarUrl.includes('unsplash.com') ||
+                existing.avatarUrl.includes('dicebear.com') ||
+                existing.avatarUrl.includes('placeholder') ||
+                !isValidCharacterImage(existing.avatarUrl);
+
+              const finalAvatar = (!existingHasDummy && existing.avatarUrl) ? existing.avatarUrl : (imgUrl || existing.avatarUrl);
+
+              if (finalAvatar && finalAvatar !== existing.avatarUrl) {
+                await customCharacters.updateOne(
+                  { _id: existing._id },
+                  { $set: { avatarUrl: finalAvatar, coverUrl: finalAvatar, updatedAt: new Date() } }
+                ).catch(() => {});
+              }
+
               return {
                 ...doc,
                 id: existing._id.toString(),
                 mongoId: existing._id.toString(),
-                avatarUrl: existing.avatarUrl || imgUrl,
-                coverUrl: existing.coverUrl || imgUrl,
+                avatarUrl: finalAvatar,
+                coverUrl: finalAvatar,
               };
             } else {
               const res = await customCharacters.insertOne({ ...doc, userId: 'global' });
@@ -1037,24 +1275,32 @@ const server = http.createServer(async (request, response) => {
         return sendJson(response, 200, { recommendations: enriched });
       } catch (err) {
         console.error('Recommendation engine error:', err);
-        const dbItems = await customCharacters.find({}).sort({ createdAt: -1 }).limit(5).toArray();
-        const fallback = dbItems.map((item) => ({
-          id: item.id || item._id.toString(),
-          name: item.name,
-          series: item.series,
-          role: item.role,
-          shortDescription: item.shortDescription,
-          description: item.description,
-          personality: item.personality,
-          roleplayRules: item.roleplayRules,
-          greeting: item.greeting,
-          starters: item.starters,
-          avatarUrl: item.avatarUrl,
-          coverUrl: item.coverUrl,
-          accent: item.accent,
-          recommendationReason: 'Trending in Universe',
-          isCustom: true,
-        }));
+        const dbItems = await customCharacters.find({}).sort({ createdAt: -1 }).limit(6).toArray().catch(() => []);
+        const fallback = await Promise.all(
+          dbItems.map(async (item) => {
+            let img = item.avatarUrl;
+            if (!img || img.includes('unsplash.com') || img.includes('dicebear.com') || !isValidCharacterImage(img)) {
+              img = await fetchCharacterImage(item.name, item.series);
+            }
+            return {
+              id: item.id || item._id.toString(),
+              name: item.name,
+              series: item.series,
+              role: item.role,
+              shortDescription: item.shortDescription,
+              description: item.description,
+              personality: item.personality,
+              roleplayRules: item.roleplayRules,
+              greeting: item.greeting,
+              starters: item.starters,
+              avatarUrl: img,
+              coverUrl: img,
+              accent: item.accent,
+              recommendationReason: 'Trending in Universe',
+              isCustom: true,
+            };
+          })
+        );
         return sendJson(response, 200, { recommendations: fallback });
       }
     }
@@ -1841,20 +2087,56 @@ const server = http.createServer(async (request, response) => {
     }
 
     // ----------------------------------------------------------------------
+    // 12b. AI-POWERED CUSTOM PUSH NOTIFICATION GENERATOR
+    // ----------------------------------------------------------------------
+    if (request.method === 'POST' && pathname === '/characters/generate-push-notification') {
+      const { characterName, characterSeries, lastSnippet, userName } = await readBody(request);
+      const name = (characterName || 'Companion').trim();
+      const user = (userName || 'friend').trim();
+      const context = (lastSnippet || '').trim();
+
+      const prompt = [
+        `You are ${name}${characterSeries ? ` from ${characterSeries}` : ''}.`,
+        `The user's name is "${user}".`,
+        context ? `Their recent chat with you ended on: "${context}".` : 'You have a close, bonded connection with this user.',
+        `Write a single, irresistible, personalized, in-character push notification message (maximum 16-20 words).`,
+        `Rules:`,
+        `- Speak directly in ${name}'s authentic voice, tone, and personality (dramatic, teasing, arrogant, sharp, or caring).`,
+        `- If recent chat context is given, hook them with a cliffhanger, witty banter, or unanswered thought referencing what was said.`,
+        `- Inspire and intrigue them to tap and open the app right now.`,
+        `- Never use generic greetings like "Hey, how are you?" or "I was thinking of you".`,
+        `- Return ONLY the notification message text without quotation marks or metadata.`,
+      ].join('\n');
+
+      try {
+        const aiResp = await callAzureOpenAI({
+          deployment: defaultDeployment,
+          messages: [{ role: 'user', content: prompt }],
+          maxTokens: 80,
+        });
+        const cleaned = (aiResp || '').trim().replace(/^["']|["']$/g, '');
+        return sendJson(response, 200, { message: cleaned });
+      } catch (err) {
+        return sendJson(response, 200, { message: null });
+      }
+    }
+
+    // ----------------------------------------------------------------------
     // 13. APP VERSION CHECK & IN-APP UPDATE NOTIFICATION
     // ----------------------------------------------------------------------
     if (request.method === 'GET' && pathname === '/app/version') {
       return sendJson(response, 200, {
-        latestVersion: process.env.APP_LATEST_VERSION || '1.0.2',
-        latestVersionCode: Number(process.env.APP_LATEST_VERSION_CODE || 3),
+        latestVersion: process.env.APP_LATEST_VERSION || '1.0.3',
+        latestVersionCode: Number(process.env.APP_LATEST_VERSION_CODE || 4),
         apkUrl: process.env.APP_APK_URL || 'https://expo.dev/accounts/samjoshua2002/projects/guildtalk/builds',
         title: 'New GuideTalk Update Available! 🚀',
-        message: 'GuideTalk v1.0.2 fixes update configuration, improves image fallback reliability, and keeps OTA channels enabled.',
+        message: 'GuideTalk v1.0.3 introduces authentic high-res character portraits for all heroes & real figures, fixes chat connectivity, and syncs Starred Guild favorites seamlessly.',
         releaseNotes: [
-          'Hourly push check-ins from your favorite companions with your real name',
-          'New in-app Notification Center in Discover tab',
-          'Vibrant new geometric cat app icon',
-          'Global cloud sync with MongoDB Atlas on Render',
+          'High-definition real portrait images for all characters, cinema heroes, and real-life figures (no more anime-only faces or paper/object placeholders)',
+          'Resolved NativeRequest chat URL crash with resilient Azure OpenAI endpoints',
+          'Perfect real-time sync between Home Starred Guild and Favorites tab',
+          'Intelligent non-intrusive companion check-ins rotating across your actual favorited legends',
+          'Persistent background keep-alive keeping MongoDB Atlas and Render cloud server active 24/7',
         ],
         forceUpdate: false,
       });
@@ -1871,4 +2153,23 @@ const server = http.createServer(async (request, response) => {
 server.listen(port, '0.0.0.0', () => {
   console.log(`GuildTalk iOS Liquid Glass Server running on 0.0.0.0:${port}`);
   console.log(`Azure OpenAI connected to ${endpoint} (default: ${defaultDeployment})`);
+
+  // Background Keep-Alive / Heartbeat loop to keep Render server awake and MongoDB connection warm
+  const KEEP_ALIVE_INTERVAL_MS = 8 * 60 * 1000; // 8 minutes (Render sleeps at 15m)
+  setInterval(async () => {
+    try {
+      // 1. Keep MongoDB Atlas connection pool warm & active
+      await database.command({ ping: 1 }).catch(() => {});
+      await customCharacters.findOne({}, { projection: { _id: 1 } }).catch(() => {});
+
+      // 2. Keep Render server awake
+      const targetUrl = process.env.RENDER_EXTERNAL_URL || 'https://guidetalk.onrender.com';
+      if (targetUrl) {
+        await fetch(`${targetUrl.replace(/\/+$/, '')}/health`, {
+          headers: { 'User-Agent': 'GuildTalk-Heartbeat/1.03' },
+          signal: AbortSignal.timeout(10000),
+        }).catch(() => {});
+      }
+    } catch {}
+  }, KEEP_ALIVE_INTERVAL_MS);
 });

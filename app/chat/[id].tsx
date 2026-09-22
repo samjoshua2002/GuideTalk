@@ -53,6 +53,7 @@ import {
   toggleHideFromRecent,
   subscribeToFavorites,
 } from '@/src/lib/favorites';
+import { saveLastConversationSnippet } from '@/src/lib/notificationService';
 
 interface SpeechPreset {
   id: string;
@@ -117,6 +118,7 @@ interface Message {
 
 interface MessageRowProps {
   item: Message;
+  character?: Character | null;
   avatarUri: string;
   bubbleUserColor: string;
   bubbleUserTextColor: string;
@@ -128,6 +130,7 @@ interface MessageRowProps {
 
 const MessageRow = React.memo(function MessageRow({
   item,
+  character,
   avatarUri,
   bubbleUserColor,
   bubbleUserTextColor,
@@ -139,7 +142,14 @@ const MessageRow = React.memo(function MessageRow({
   const isUser = item.role === 'user';
   return (
     <View style={[styles.bubbleWrapper, isUser ? styles.userBubbleWrap : styles.characterBubbleWrap]}>
-      {!isUser && <Image source={{ uri: avatarUri }} style={styles.bubbleMiniAvatar} />}
+      {!isUser && (
+        <DynamicCharacterImage
+          character={character}
+          sourceUri={avatarUri}
+          style={styles.bubbleMiniAvatar}
+          contentFit="cover"
+        />
+      )}
       <Pressable
         onLongPress={() => onLongPress(item)}
         delayLongPress={350}
@@ -354,7 +364,10 @@ export default function ChatScreen() {
     if (!character) return;
     triggerHaptic('medium');
     setIsResolvingImage(true);
-    await cycleCharacterImage(character);
+    const nextUrl = await cycleCharacterImage(character);
+    if (nextUrl) {
+      setCharacter((prev) => (prev ? { ...prev, avatarUrl: nextUrl, coverUrl: nextUrl } : null));
+    }
     setIsResolvingImage(false);
     triggerHaptic('success');
   };
@@ -660,6 +673,9 @@ export default function ChatScreen() {
           content: reply.content,
         },
       ]);
+      if (character) {
+        saveLastConversationSnippet(character.id, character.name, character.series, reply.content);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to reach the character service.');
     } finally {
@@ -1279,6 +1295,7 @@ export default function ChatScreen() {
           renderItem={({ item }) => (
             <MessageRow
               item={item}
+              character={character}
               avatarUri={character.avatarUrl}
               bubbleUserColor={theme.bubbleUser}
               bubbleUserTextColor={theme.bubbleUserText}

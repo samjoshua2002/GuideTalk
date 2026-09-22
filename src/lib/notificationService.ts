@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
 import { Character } from '@/src/types/character';
+import { generateAiPushNotification } from './chatApi';
 
 // Configure notification presentation rules
 Notifications.setNotificationHandler({
@@ -29,6 +30,50 @@ export interface InAppNotification {
 }
 
 const READ_NOTIFS_KEY = 'guildtalk_read_notifications_v1';
+const SNIPPET_PREFIX = 'guidetalk_chat_snippet_';
+
+export async function saveLastConversationSnippet(
+  characterId: string,
+  characterName: string,
+  characterSeries?: string,
+  snippetText?: string
+): Promise<void> {
+  if (!characterId || !snippetText) return;
+  const key = `${SNIPPET_PREFIX}${characterId.trim().toLowerCase()}`;
+  const data = {
+    characterId,
+    characterName,
+    characterSeries,
+    snippet: snippetText.slice(0, 250),
+    timestamp: Date.now(),
+  };
+  try {
+    const serialized = JSON.stringify(data);
+    if (Platform.OS === 'web') {
+      globalThis.localStorage?.setItem(key, serialized);
+    } else {
+      await SecureStore.setItemAsync(key, serialized);
+    }
+  } catch {}
+}
+
+export async function getLastConversationSnippet(characterId: string): Promise<string | null> {
+  if (!characterId) return null;
+  const key = `${SNIPPET_PREFIX}${characterId.trim().toLowerCase()}`;
+  try {
+    let raw: string | null = null;
+    if (Platform.OS === 'web') {
+      raw = globalThis.localStorage?.getItem(key);
+    } else {
+      raw = await SecureStore.getItemAsync(key);
+    }
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return parsed.snippet || null;
+    }
+  } catch {}
+  return null;
+}
 
 // ----------------------------------------------------------------------
 // 1. PERMISSIONS & CHANNELS
@@ -238,63 +283,59 @@ export async function scheduleHourlyCompanionReminder(
     // Cancel old schedules to prevent accumulation
     await Notifications.cancelAllScheduledNotificationsAsync();
 
-    // Pick a liked character
-    const char = characters[Math.floor(Math.random() * characters.length)];
-    const message = getCharacterReminderMessage(char.name, userName);
-
+    // Rotate across the user's favorited characters over time
+    // Schedule intervals at realistic times (2h, 5h, 9h, 15h, 24h)
+    const intervalsSeconds = [7200, 18000, 32400, 54000, 86400];
     const titles = [
-      `${char.name} misses you!`,
-      `${char.name} is checking in`,
-      `New message from ${char.name}`,
-      `${char.name} wants to talk`,
+      (name: string) => `${name} sent a message`,
+      (name: string) => `${name} wants to talk`,
+      (name: string) => `${name} is thinking of you`,
+      (name: string) => `Unfinished chat with ${name}`,
     ];
-    const title = titles[Math.floor(Math.random() * titles.length)];
 
-    // 1. Initial reminder in 20 seconds so user can see it right after closing/backgrounding app
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body: message,
-        data: {
-          type: 'character_chat',
-          characterId: char.id,
-          characterName: char.name,
-        },
-        sound: true,
-        priority: Notifications.AndroidNotificationPriority.MAX,
-        vibrate: [0, 250, 250, 250],
-        color: '#F4CD2A',
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: 20,
-        repeats: false,
-        channelId: 'companion-reminders',
-      },
-    });
+    for (let i = 0; i < intervalsSeconds.length; i++) {
+      const char = characters[i % characters.length];
+      const titleFn = titles[i % titles.length];
+      const title = titleFn(char.name);
 
-    // 2. Continuous 1-hour repeating reminder for long-term engagement with varied message
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: `${char.name} is checking in`,
-        body: getCharacterReminderMessage(char.name, userName),
-        data: {
-          type: 'character_chat',
-          characterId: char.id,
-          characterName: char.name,
+      // 1. Fetch conversation snippet for this specific character if available
+      const snippet = await getLastConversationSnippet(char.id);
+
+      // 2. Generate customized AI push notification based on conversation context
+      let message = await generateAiPushNotification({
+        characterName: char.name,
+        characterSeries: char.series,
+        lastSnippet: snippet || undefined,
+        userName,
+      });
+
+      // 3. Fallback to varied in-character reminder if AI hook was unavailable
+      if (!message) {
+        message = getCharacterReminderMessage(char.name, userName);
+      }
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body: message,
+          data: {
+            type: 'character_chat',
+            characterId: char.id,
+            characterName: char.name,
+          },
+          sound: true,
+          priority: Notifications.AndroidNotificationPriority.DEFAULT,
+          vibrate: [0, 250, 250, 250],
+          color: '#F4CD2A',
         },
-        sound: true,
-        priority: Notifications.AndroidNotificationPriority.MAX,
-        vibrate: [0, 250, 250, 250],
-        color: '#F4CD2A',
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: 3600, // Every 1 hour
-        repeats: true,
-        channelId: 'companion-reminders',
-      },
-    });
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+          seconds: intervalsSeconds[i],
+          repeats: false,
+          channelId: 'companion-reminders',
+        },
+      });
+    }
   } catch (err) {
     console.log('Error scheduling notification:', err);
   }
@@ -470,47 +511,57 @@ export async function getInAppNotifications(
     });
   });
 
-  // 2. Official App Updates & Changelog
+  // 2. Official App Updates & Changelog (v1.0.3 Release)
   const appUpdates: InAppNotification[] = [
     {
-      id: 'update-v101-cloud',
+      id: 'update-v103-release',
       type: 'app_update',
-      title: "What's New in GuideTalk v1.0.1 🎉",
-      body: 'Cloud backend is now LIVE on Render and MongoDB Atlas! Your favorite companions and conversations sync seamlessly across all your devices.',
+      title: "What's New in GuideTalk v1.0.3 🎉",
+      body: 'Major update! Real-life portraits & cinema heroes via Wikipedia & Studio Vault, 1-tap Look Switcher, live search autocomplete, and conversational AI push notifications.',
       timeAgo: 'Just now',
-      timestamp: Date.now() - 60000,
-      unread: !readSet.has('update-v101-cloud'),
-      badge: 'New Feature',
+      timestamp: Date.now() - 30000,
+      unread: !readSet.has('update-v103-release'),
+      badge: 'v1.0.3 Update',
     },
     {
-      id: 'update-liquid-glass',
+      id: 'update-cinema-real-portraits',
       type: 'app_update',
-      title: 'Visual Refresh: Liquid Glass 2.0 💎',
-      body: 'Upgraded with deep ambient drop shadows, anti-aliased highlights, and native blur surfaces across dark and light themes.',
-      timeAgo: '2h ago',
-      timestamp: Date.now() - 7200000,
-      unread: !readSet.has('update-liquid-glass'),
-      badge: 'Design',
+      title: 'Cinema & Real-Life Legends HD Art 🎬',
+      body: 'Chat with Robert Downey Jr. Tony Stark, Batman, Joker, Walter White, Sherlock Holmes, Elon Musk, Einstein, Vijay, SRK, and Ronaldo with unscaled official HD portraits.',
+      timeAgo: '1h ago',
+      timestamp: Date.now() - 3600000,
+      unread: !readSet.has('update-cinema-real-portraits'),
+      badge: 'New Portraits',
     },
     {
-      id: 'update-multi-search',
+      id: 'update-look-switcher',
       type: 'app_update',
-      title: 'AI Multi-Universe Candidate Search ⚡',
-      body: 'Search any character, actor, or movie role to generate 3 iconic forms (e.g. Base Goku vs Super Saiyan vs Ultra Instinct) in real time.',
+      title: 'Instant 1-Tap "Change Look" & Chat Sync 🎨',
+      body: 'Tap Change Look in the chat menu to instantly cycle character visual styles with 100% sync to all chat message avatars.',
+      timeAgo: '3h ago',
+      timestamp: Date.now() - 10800000,
+      unread: !readSet.has('update-look-switcher'),
+      badge: 'Feature',
+    },
+    {
+      id: 'update-search-autocomplete',
+      type: 'app_update',
+      title: 'Live Search Suggestions & Multi-Results ⚡',
+      body: 'Get instant live suggestions while typing in search and explore 8-14+ distinct adaptations and universe variants.',
+      timeAgo: '5h ago',
+      timestamp: Date.now() - 18000000,
+      unread: !readSet.has('update-search-autocomplete'),
+      badge: 'Search',
+    },
+    {
+      id: 'update-ai-push-hooks',
+      type: 'app_update',
+      title: 'AI Companion Push Notifications 🤖',
+      body: 'Your favorite companions now craft personalized, context-aware lockscreen messages directly from your conversation history.',
       timeAgo: '1d ago',
       timestamp: Date.now() - 86400000,
-      unread: !readSet.has('update-multi-search'),
-      badge: 'AI Update',
-    },
-    {
-      id: 'update-voice-teaser',
-      type: 'app_update',
-      title: 'Coming Soon: Real-Time Voice Calls 🎙️',
-      body: 'We are engineering interactive voice dialogue with authentic character tone, cadences, and realistic emotions. Stay tuned!',
-      timeAgo: '2d ago',
-      timestamp: Date.now() - 172800000,
-      unread: !readSet.has('update-voice-teaser'),
-      badge: 'Upcoming',
+      unread: !readSet.has('update-ai-push-hooks'),
+      badge: 'AI Notifications',
     },
   ];
 

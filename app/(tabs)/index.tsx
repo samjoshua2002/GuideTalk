@@ -44,7 +44,7 @@ import {
   clearAllNotifications,
   InAppNotification,
 } from '@/src/lib/notificationService';
-import { getHiddenRecentIds, subscribeToFavorites, getFavoriteIds } from '@/src/lib/favorites';
+import { getHiddenRecentIds, subscribeToFavorites, getFavoriteIds, loadAllFavoriteCharacters } from '@/src/lib/favorites';
 import { getInteractedCharacterIds } from '@/src/lib/activityTracker';
 import { DynamicCharacterImage } from '@/src/lib/dynamicImageService';
 import {
@@ -268,21 +268,12 @@ export default function DiscoverScreen() {
 
   const loadFavorites = useCallback(async () => {
     try {
-      const ids = await getFavoriteIds(user?.id);
-      if (Array.isArray(ids) && ids.length > 0) {
-        const presets = getAllPresets();
-        const allChars = [...getAllBuiltinCharacters(), ...presets];
-        const favMap = new Map<string, Character>();
-        allChars.forEach((c) => favMap.set(c.id, c));
-        const favs = ids.map((id) => favMap.get(id)).filter(Boolean) as Character[];
-        setFavoriteCharacters(favs);
-      } else {
-        setFavoriteCharacters([]);
-      }
+      const favs = await loadAllFavoriteCharacters(user?.id, characterList);
+      setFavoriteCharacters(favs);
     } catch {
       setFavoriteCharacters([]);
     }
-  }, [user?.id]);
+  }, [user?.id, characterList]);
 
   useEffect(() => {
     // STRICT: Only send companion reminders for characters the user explicitly liked/favorited!

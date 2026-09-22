@@ -20,7 +20,7 @@ import { LiquidGlassView } from '@/src/components/LiquidGlassView';
 import { getCharacter, getAllBuiltinCharacters } from '@/src/data/characters';
 import { Character } from '@/src/types/character';
 import { triggerHaptic } from '@/src/lib/haptics';
-import { getFavoriteIds, toggleFavorite, subscribeToFavorites } from '@/src/lib/favorites';
+import { getFavoriteIds, toggleFavorite, subscribeToFavorites, loadAllFavoriteCharacters } from '@/src/lib/favorites';
 import { DynamicCharacterImage } from '@/src/lib/dynamicImageService';
 import { fetchCharacters } from '@/src/lib/chatApi';
 
@@ -43,36 +43,13 @@ export default function FavoritesScreen() {
 
   const loadFavorites = useCallback(async () => {
     try {
-      const favIds = await getFavoriteIds(user?.id);
-      if (favIds.length === 0) {
-        setFavoriteCharacters([]);
-        setIsLoading(false);
-        return;
-      }
-
-      // 1. Gather all local known characters
-      const allBuiltin = getAllBuiltinCharacters();
-      const charMap = new Map<string, Character>();
-      allBuiltin.forEach((c) => charMap.set(c.id, c));
-
-      // 2. Fetch remote custom characters if any might be custom
+      setIsLoading(true);
+      let remoteChars: Character[] = [];
       try {
-        const remote = await fetchCharacters();
-        if (Array.isArray(remote)) {
-          remote.forEach((c) => charMap.set(c.id, c));
-        }
-      } catch {
-        // Offline fallback uses all builtins
-      }
-
-      const resolved: Character[] = [];
-      favIds.forEach((id) => {
-        const found = charMap.get(id) || getCharacter(id);
-        if (found) {
-          resolved.push(found);
-        }
-      });
-
+        const res = await fetchCharacters();
+        if (Array.isArray(res)) remoteChars = res;
+      } catch {}
+      const resolved = await loadAllFavoriteCharacters(user?.id, remoteChars);
       setFavoriteCharacters(resolved);
     } catch (err) {
       console.log('Failed to load favorites:', err);

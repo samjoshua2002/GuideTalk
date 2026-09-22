@@ -25,6 +25,26 @@ export interface ConversationSummary {
   updatedAt: string;
 }
 
+export function getAzureOpenAIUrl(deployment?: string): string {
+  let endpoint = (env.azureEndpoint || '').trim();
+  if (!endpoint) {
+    endpoint = 'https://qbssazureopenai.openai.azure.com/';
+  }
+  if (!endpoint.startsWith('http://') && !endpoint.startsWith('https://')) {
+    endpoint = `https://${endpoint}`;
+  }
+  if (!endpoint.endsWith('/')) {
+    endpoint = `${endpoint}/`;
+  }
+  const apiVersion = (env.azureApiVersion || '2025-01-01-preview').trim();
+  const targetModel = (deployment || env.azureDefaultDeployment || 'gpt-5.6-luna').trim();
+  return `${endpoint}openai/deployments/${encodeURIComponent(targetModel)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
+}
+
+export function getAzureApiKey(): string {
+  return env.azureApiKey || process.env.EXPO_PUBLIC_AZURE_OPENAI_API_KEY || '';
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   const payload: unknown = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -202,37 +222,64 @@ export async function generateCharacterWithAI(query: string): Promise<Character>
 
 async function directGenerateCharacter(query: string): Promise<Character> {
   const prompt = `Recognize the character "${query}". Return a single JSON object with keys: name, series, role, shortDescription, description, personality (array), roleplayRules, greeting, starters (array of 3 strings), accent (hex).`;
-  const url = `${env.azureEndpoint}openai/deployments/gpt-5.6-luna/chat/completions?api-version=${env.azureApiVersion}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'api-key': env.azureApiKey },
-    body: JSON.stringify({
-      messages: [{ role: 'user', content: prompt }],
-      max_completion_tokens: 1200,
-    }),
-  });
-  const data = await res.json();
-  const text = data?.choices?.[0]?.message?.content || '{}';
-  let cleaned = text.trim().replace(/^```json/, '').replace(/```$/, '').trim();
-  const parsed = JSON.parse(cleaned);
-  return {
-    id: `custom-${Date.now()}`,
-    name: parsed.name || query,
-    series: parsed.series || 'Custom',
-    role: parsed.role || 'Hero',
-    shortDescription: parsed.shortDescription || '',
-    description: parsed.description || '',
-    category: 'custom',
-    personality: parsed.personality || ['Witty', 'Emotional'],
-    roleplayRules: parsed.roleplayRules || '',
-    greeting: parsed.greeting || 'Greetings.',
-    starters: parsed.starters || ['Hello!'],
-    avatarUrl: 'https://static.zerochan.net/Furina.full.4024209.jpg',
-    coverUrl: 'https://static.zerochan.net/Furina.full.4024209.jpg',
-    accent: parsed.accent || '#FFFFFF',
-    isOnline: true,
-    isCustom: true,
-  };
+  const url = getAzureOpenAIUrl('gpt-5.6-luna');
+  const apiKey = getAzureApiKey();
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: prompt }],
+        max_completion_tokens: 1200,
+      }),
+    });
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content || '{}';
+    let cleaned = text.trim().replace(/^```json/, '').replace(/```$/, '').trim();
+    const parsed = JSON.parse(cleaned);
+    const initialAvatar =
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop&q=80';
+    return {
+      id: `custom-${Date.now()}`,
+      name: parsed.name || query,
+      series: parsed.series || 'Custom Origin',
+      role: parsed.role || 'Companion',
+      shortDescription: parsed.shortDescription || `Legendary persona for ${query}`,
+      description: parsed.description || `Legendary persona for ${query}`,
+      category: 'custom',
+      personality: Array.isArray(parsed.personality) ? parsed.personality : ['Witty', 'Emotional'],
+      roleplayRules: parsed.roleplayRules || 'Speak with authentic emotional flair and depth.',
+      greeting: parsed.greeting || `Greetings! I am ${parsed.name || query}.`,
+      starters: Array.isArray(parsed.starters) && parsed.starters.length > 0 ? parsed.starters : ['Tell me about your world.', 'What is your secret?'],
+      avatarUrl: initialAvatar,
+      coverUrl: initialAvatar,
+      accent: parsed.accent || '#FFFFFF',
+      isOnline: true,
+      isCustom: true,
+    };
+  } catch (err) {
+    console.error('Direct character generation failed:', err);
+    const fallbackAvatar =
+      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&auto=format&fit=crop&q=80';
+    return {
+      id: `custom-${Date.now()}`,
+      name: query,
+      series: 'Custom Origin',
+      role: 'Legendary Companion',
+      shortDescription: `Custom persona for ${query}`,
+      description: `A unique character known as ${query}. Ready to chat with charisma and emotional depth.`,
+      category: 'custom',
+      personality: ['Charismatic', 'Witty', 'Authentic'],
+      roleplayRules: 'Speak in full character with emotional range and charming wit.',
+      greeting: `Greetings! I am ${query}. It is wonderful to meet you.`,
+      starters: ['What brings you here today?', 'Tell me a story from your world.'],
+      avatarUrl: fallbackAvatar,
+      coverUrl: fallbackAvatar,
+      accent: '#FFFFFF',
+      isOnline: true,
+      isCustom: true,
+    };
+  }
 }
 
 export async function saveCustomCharacter(character: Character, token?: string | null): Promise<Character> {
@@ -455,20 +502,30 @@ async function directAzureChat({
     }
   }
 
-  const url = `${env.azureEndpoint}openai/deployments/${encodeURIComponent(targetModel)}/chat/completions?api-version=${env.azureApiVersion}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'api-key': env.azureApiKey,
-    },
-    body: JSON.stringify({
-      messages: history,
-      max_completion_tokens: 800,
-    }),
-  });
-  const data = await response.json();
-  return data?.choices?.[0]?.message?.content?.trim() || '...';
+  const url = getAzureOpenAIUrl(targetModel);
+  const apiKey = getAzureApiKey();
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': apiKey,
+      },
+      body: JSON.stringify({
+        messages: history,
+        max_completion_tokens: 800,
+      }),
+    });
+    if (!response.ok) {
+      console.warn(`Direct Azure OpenAI returned status ${response.status}`);
+      return `*smiles warmly* I hear you, but my connection wavered for a second. Let's keep talking!`;
+    }
+    const data = await response.json();
+    return data?.choices?.[0]?.message?.content?.trim() || '...';
+  } catch (err) {
+    console.error('Direct Azure OpenAI network error:', err);
+    return `*looks at you attentively* I felt our connection flicker for an instant. Tell me what you're thinking!`;
+  }
 }
 
 // ----------------------------------------------------------------------
@@ -529,7 +586,8 @@ async function directAzureSearchCandidates(
   const cleanQ = query.trim();
   if (!cleanQ) return [];
 
-  if (env.azureApiKey && env.azureEndpoint) {
+  const apiKey = getAzureApiKey();
+  if (apiKey) {
     try {
       const prompt = [
         `The user is searching for character or figure: "${cleanQ}". Preferred language/region: ${language || 'any'}.`,
@@ -539,14 +597,14 @@ async function directAzureSearchCandidates(
       ].join('\n');
 
       const targetModel = env.azureDefaultDeployment || 'gpt-5.6-luna';
-      const url = `${env.azureEndpoint}openai/deployments/${encodeURIComponent(targetModel)}/chat/completions?api-version=${env.azureApiVersion}`;
+      const url = getAzureOpenAIUrl(targetModel);
       const response = await fetchWithTimeout(
         url,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'api-key': env.azureApiKey,
+            'api-key': apiKey,
           },
           body: JSON.stringify({
             messages: [{ role: 'user', content: prompt }],
@@ -845,5 +903,64 @@ export async function fetchAppVersion(): Promise<AppVersionInfo | null> {
   } catch {
     return null;
   }
+}
+
+// ----------------------------------------------------------------------
+// 9. AI COMPANION PUSH NOTIFICATION GENERATOR
+// ----------------------------------------------------------------------
+
+export async function generateAiPushNotification({
+  characterName,
+  characterSeries,
+  lastSnippet,
+  userName,
+  token,
+}: {
+  characterName: string;
+  characterSeries?: string;
+  lastSnippet?: string;
+  userName?: string;
+  token?: string | null;
+}): Promise<string | null> {
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await apiFetch(
+      '/characters/generate-push-notification',
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ characterName, characterSeries, lastSnippet, userName }),
+      },
+      5000
+    );
+    if (res.ok) {
+      const data = await parseResponse<{ message?: string }>(res);
+      if (data?.message) return data.message;
+    }
+  } catch {}
+
+  // Fallback to direct Azure OpenAI if server is sleeping or restarting
+  try {
+    const prompt = `You are ${characterName}${characterSeries ? ` from ${characterSeries}` : ''}. The user's name is ${userName || 'friend'}. Their last conversation snippet was: "${lastSnippet || 'thinking about our journey'}". Write a single, irresistible, dramatic, in-character push notification message (maximum 16-20 words). Return ONLY the message.`;
+    const url = getAzureOpenAIUrl('gpt-5.6-luna');
+    const apiKey = getAzureApiKey();
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: `You are ${characterName}. Speak directly in character. Max 18 words.` },
+          { role: 'user', content: prompt },
+        ],
+        max_completion_tokens: 60,
+      }),
+    });
+    const data = await res.json();
+    const directReply = data?.choices?.[0]?.message?.content;
+    if (directReply) return directReply.trim().replace(/^["']|["']$/g, '');
+  } catch {}
+
+  return null;
 }
 

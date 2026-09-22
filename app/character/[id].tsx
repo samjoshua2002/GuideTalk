@@ -46,7 +46,7 @@ export default function CharacterDetailsScreen() {
   const handleToggleFavorite = async () => {
     if (!character) return;
     triggerHaptic('medium');
-    const newState = await toggleFavorite(character.id, user?.id);
+    const newState = await toggleFavorite(character.id, user?.id, character);
     setIsFav(newState);
   };
 

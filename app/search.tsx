@@ -180,7 +180,7 @@ function useRecentCharacters(user: any, token: string | null) {
               avatarUrl:
                 found?.avatarUrl ||
                 cv.characterAvatar ||
-                `https://api.dicebear.com/9.x/adventurer/png?seed=${encodeURIComponent(cv.characterName)}&backgroundColor=000000`,
+                'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
             });
           }
         }
@@ -250,6 +250,7 @@ export default function SearchScreen() {
   const [localResults, setLocalResults] = useState<Character[]>([]);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   const shimmerAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -280,6 +281,51 @@ export default function SearchScreen() {
     const t = setTimeout(() => inputRef.current?.focus(), 180);
     return () => clearTimeout(t);
   }, []);
+
+  // Instant suggestions while typing (local, trending, and Wikipedia live autocomplete)
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setSuggestions([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const qLower = q.toLowerCase();
+      const list = new Set<string>();
+
+      // Local builtin characters
+      getAllBuiltinCharacters().forEach((c) => {
+        if (c.name.toLowerCase().includes(qLower)) list.add(c.name);
+      });
+
+      // Trending queries
+      TRENDING.forEach((t) => {
+        if (t.query.toLowerCase().includes(qLower)) list.add(t.query);
+      });
+
+      // Live Wikipedia suggestions
+      try {
+        const url = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(q)}&limit=6&namespace=0&format=json&origin=*`;
+        const res = await fetch(url, {
+          headers: { 'User-Agent': 'GuildTalkApp/1.0.3 (contact@guildtalk.app)' },
+          signal: AbortSignal.timeout(3000),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const titles: string[] = data?.[1] || [];
+          titles.forEach((t) => {
+            if (t && !t.includes(':') && !t.includes('List of') && !t.includes('Disambiguation')) {
+              list.add(t);
+            }
+          });
+        }
+      } catch {}
+
+      setSuggestions(Array.from(list).slice(0, 8));
+    }, 180);
+
+    return () => clearTimeout(timer);
+  }, [query]);
 
   // Instant filter on local characters while typing
   useEffect(() => {
@@ -356,73 +402,60 @@ export default function SearchScreen() {
       const allChars = getAllBuiltinCharacters();
       const cleanLower = trimmed.toLowerCase();
 
-      // 1. Exact full name match -> open directly
-      const exactMatch = allChars.find((c) => c.name.toLowerCase() === cleanLower);
-      if (exactMatch) {
-        openCharacter(exactMatch);
-        setIsSearching(false);
-        return;
-      }
-
-      // 2. Partial matches from builtin / custom characters
+      // Gather matching local builtin characters
       const localMatches = allChars.filter((c) => {
         const n = c.name.toLowerCase();
         const s = (c.series || '').toLowerCase();
         return n.includes(cleanLower) || cleanLower.includes(n) || s.includes(cleanLower);
       });
 
+      const mergedMap = new Map<string, CharacterCandidate>();
+
+      // Seed with local character candidates
+      localMatches.forEach((c) => {
+        mergedMap.set(c.name.toLowerCase(), {
+          name: c.name,
+          series: c.series || 'Famous Universe',
+          role: c.role,
+          description: c.description,
+          shortDescription: c.shortDescription || c.description.slice(0, 100),
+          greeting: c.greeting,
+          avatarUrl: c.avatarUrl,
+          coverUrl: c.coverUrl,
+          personality: c.personality,
+        });
+      });
+
       try {
         const candidates = await searchMultiCharacters(trimmed, undefined, token);
         if (candidates && candidates.length > 0) {
-          setResults(candidates);
-        } else if (localMatches.length > 0) {
-          setResults(
-            localMatches.map((c) => ({
-              name: c.name,
-              series: c.series || 'Famous Universe',
-              role: c.role,
-              description: c.description,
-              shortDescription: c.shortDescription || c.description.slice(0, 100),
-              greeting: c.greeting,
-              avatarUrl: c.avatarUrl,
-              coverUrl: c.coverUrl,
-              personality: c.personality,
-            }))
-          );
+          candidates.forEach((cand) => {
+            mergedMap.set(cand.name.toLowerCase(), cand);
+          });
         }
-      } catch {
-        if (localMatches.length > 0) {
-          setResults(
-            localMatches.map((c) => ({
-              name: c.name,
-              series: c.series || 'Famous Universe',
-              role: c.role,
-              description: c.description,
-              shortDescription: c.shortDescription || c.description.slice(0, 100),
-              greeting: c.greeting,
-              avatarUrl: c.avatarUrl,
-              coverUrl: c.coverUrl,
-              personality: c.personality,
-            }))
-          );
-        } else {
-          setResults([
-            {
-              name: trimmed,
-              series: 'Legendary Universe',
-              role: 'Iconic Hero',
-              shortDescription: `Custom character persona for ${trimmed}`,
-              description: `A legendary figure known as ${trimmed}. Ready to converse with wit, charisma, and lore.`,
-              personality: ['Charismatic', 'Sharp', 'Authentic'],
-              greeting: `Hello! I am ${trimmed}. What shall we talk about today?`,
-              avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&q=80',
-              coverUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&q=80',
-            },
-          ]);
-        }
-      } finally {
-        setIsSearching(false);
+      } catch (err) {
+        console.warn('Multi search error:', err);
       }
+
+      const finalCandidates = Array.from(mergedMap.values());
+      if (finalCandidates.length > 0) {
+        setResults(finalCandidates);
+      } else {
+        setResults([
+          {
+            name: trimmed,
+            series: 'Custom Origin',
+            role: 'Iconic Hero',
+            shortDescription: `Custom character persona for ${trimmed}`,
+            description: `A legendary figure known as ${trimmed}. Ready to converse with wit, charisma, and lore.`,
+            personality: ['Charismatic', 'Sharp', 'Authentic'],
+            greeting: `Hello! I am ${trimmed}. What shall we talk about today?`,
+            avatarUrl: '',
+            coverUrl: '',
+          },
+        ]);
+      }
+      setIsSearching(false);
     },
     [isSearching, token, addRecentQuery]
   );
@@ -580,6 +613,44 @@ export default function SearchScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}
       >
+        {/* ============================================================ */}
+        {/* 0. LIVE SUGGESTIONS WHILE TYPING                             */}
+        {/* ============================================================ */}
+        {showTyping && suggestions.length > 0 && (
+          <View style={styles.suggestionsContainer}>
+            <View style={styles.sectionRow}>
+              <Text style={[styles.sectionLabel, { color: theme.secondary }]}>SUGGESTIONS</Text>
+              <Text style={[styles.resultCount, { color: theme.muted }]}>tap to search</Text>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.suggestionsScroll}
+            >
+              {suggestions.map((sug, idx) => (
+                <Pressable
+                  key={`sug-${idx}`}
+                  onPress={() => {
+                    setQuery(sug);
+                    performSearch(sug);
+                  }}
+                  style={({ pressed }) => [
+                    styles.suggestionChip,
+                    {
+                      backgroundColor: theme.surfaceSolid,
+                      borderColor: theme.border,
+                      opacity: pressed ? 0.72 : 1,
+                    },
+                  ]}
+                >
+                  <Ionicons name="search" size={13} color={theme.secondary} style={{ marginRight: 6 }} />
+                  <Text style={[styles.suggestionChipText, { color: theme.text }]}>{sug}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         {/* ============================================================ */}
         {/* 1. TYPING STATE: LIVE INSTANT MATCHES                        */}
         {/* ============================================================ */}
@@ -1175,4 +1246,25 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   errorText: { flex: 1, fontSize: 13, fontWeight: '600' },
+  suggestionsContainer: {
+    marginBottom: 16,
+  },
+  suggestionsScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  suggestionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  suggestionChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
 });

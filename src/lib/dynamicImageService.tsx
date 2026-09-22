@@ -47,12 +47,64 @@ async function persistCache() {
   } catch {}
 }
 
+async function directClientWikipediaCandidates(name: string, series?: string): Promise<string[]> {
+  const cleanName = (name || '').trim();
+  if (!cleanName) return [];
+  const queries = [cleanName, series ? `${cleanName} ${series}` : null].filter(Boolean) as string[];
+  const candidates: string[] = [];
+
+  for (const q of queries) {
+    try {
+      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&srlimit=4&format=json&origin=*`;
+      const res = await fetch(searchUrl, {
+        headers: { 'User-Agent': 'GuildTalkApp/1.0.3 (contact@guildtalk.app)' },
+        signal: AbortSignal.timeout(4000),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const items = data?.query?.search || [];
+      for (const item of items) {
+        const title = item.title;
+        if (!title) continue;
+        const sumUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+        const sumRes = await fetch(sumUrl, {
+          headers: { 'User-Agent': 'GuildTalkApp/1.0.3 (contact@guildtalk.app)' },
+          signal: AbortSignal.timeout(3500),
+        });
+        if (!sumRes.ok) continue;
+        const sumData = await sumRes.json();
+        const img = sumData?.originalimage?.source || sumData?.thumbnail?.source;
+        if (
+          img &&
+          typeof img === 'string' &&
+          img.startsWith('http') &&
+          !img.includes('.svg') &&
+          !img.includes('coat_of_arms') &&
+          !img.includes('flag') &&
+          !img.includes('document') &&
+          !img.includes('manuscript') &&
+          !img.includes('paper')
+        ) {
+          candidates.push(img);
+        }
+      }
+      if (candidates.length > 0) break;
+    } catch {}
+  }
+  return candidates;
+}
+
+async function directClientWikipediaPortrait(name: string, series?: string): Promise<string | null> {
+  const list = await directClientWikipediaCandidates(name, series);
+  return list.length > 0 ? list[0] : null;
+}
+
 /**
  * Fetch a real character image dynamically from the backend web search.
  * Deduplicates concurrent requests and notifies subscribers.
  */
 export async function resolveCharacterImage(
-  char?: Partial<Character> | { name: string; series?: string } | null,
+  char?: Partial<Character> | { name: string; series?: string; avatarUrl?: string } | null,
   force: boolean = false
 ): Promise<string | null> {
   if (!char || !char.name) return null;
@@ -69,10 +121,19 @@ export async function resolveCharacterImage(
   const fetchPromise = (async () => {
     try {
       const result = await fetchDynamicCharacterImage(char.name!, char.series, force);
-      const fetchedUrl = result.imageUrl;
+      let fetchedUrl = result.imageUrl;
       // Store candidates for instant cycling
       if (result.candidates && result.candidates.length > 0) {
         candidatesCache.set(key, result.candidates);
+      }
+      if (!fetchedUrl) {
+        // Direct Wikipedia portrait fallback if server is waking up or offline
+        const wikiCandidates = await directClientWikipediaCandidates(char.name!, char.series);
+        if (wikiCandidates.length > 0) {
+          fetchedUrl = wikiCandidates[0];
+          const existingPool = candidatesCache.get(key) || [];
+          candidatesCache.set(key, Array.from(new Set([...existingPool, ...wikiCandidates])));
+        }
       }
       if (fetchedUrl) {
         memoryImageCache.set(key, fetchedUrl);
@@ -85,11 +146,15 @@ export async function resolveCharacterImage(
     } finally {
       pendingFetches.delete(key);
     }
-    // High-resolution stylized anime avatar guarantee so cards never remain broken
-    const fallback = `https://api.dicebear.com/9.x/adventurer/png?seed=${encodeURIComponent(char.name || 'Hero')}&backgroundColor=1e293b`;
-    memoryImageCache.set(key, fallback);
-    listeners.forEach((fn) => fn(key, fallback));
-    return fallback;
+
+    // If character already has an avatar that isn't a dummy sample, preserve it
+    if (char.avatarUrl && !char.avatarUrl.includes('unsplash.com') && !char.avatarUrl.includes('dicebear.com')) {
+      memoryImageCache.set(key, char.avatarUrl);
+      listeners.forEach((fn) => fn(key, char.avatarUrl!));
+      return char.avatarUrl;
+    }
+
+    return null;
   })();
 
   pendingFetches.set(key, fetchPromise);
@@ -97,31 +162,66 @@ export async function resolveCharacterImage(
 }
 
 /**
- * Instantly cycle to the next candidate image without a server call.
- * If no cached candidates exist, falls back to a full server fetch.
+ * Instantly cycle to the next candidate image.
+ * Guarantees a brand new image on the VERY FIRST TAP by fetching fresh candidates
+ * eagerly if the local candidate pool has fewer than 2 items.
  */
 export async function cycleCharacterImage(
-  char?: Partial<Character> | { name: string; series?: string } | null
+  char?: Partial<Character> | { name: string; series?: string; avatarUrl?: string } | null
 ): Promise<string | null> {
   if (!char || !char.name) return null;
   const key = getCacheKey(char.name, char.series);
-  const pool = candidatesCache.get(key);
-  const currentUrl = memoryImageCache.get(key);
+  let pool = candidatesCache.get(key) || [];
+  const currentUrl = memoryImageCache.get(key) || char.avatarUrl || '';
 
-  // If we have cached candidates, pick a different one instantly
-  if (pool && pool.length > 1) {
-    const filtered = pool.filter((u) => u !== currentUrl);
-    const pick = filtered.length > 0
+  // If pool has fewer than 2 candidates, eagerly fetch candidates immediately
+  if (pool.length < 2) {
+    try {
+      const [serverRes, wikiCandidates] = await Promise.allSettled([
+        fetchDynamicCharacterImage(char.name, char.series, true),
+        directClientWikipediaCandidates(char.name, char.series),
+      ]);
+
+      const gathered = new Set<string>();
+      if (serverRes.status === 'fulfilled' && serverRes.value?.candidates) {
+        serverRes.value.candidates.forEach((u) => gathered.add(u));
+      }
+      if (wikiCandidates.status === 'fulfilled' && wikiCandidates.value) {
+        wikiCandidates.value.forEach((u) => gathered.add(u));
+      }
+      if (gathered.size > 0) {
+        pool = Array.from(gathered);
+        candidatesCache.set(key, pool);
+      }
+    } catch {}
+  }
+
+  // Pick a candidate that is guaranteed different from currentUrl
+  const filtered = pool.filter((u) => u !== currentUrl && u !== char.avatarUrl);
+  const pick =
+    filtered.length > 0
       ? filtered[Math.floor(Math.random() * filtered.length)]
-      : pool[Math.floor(Math.random() * pool.length)];
+      : pool.length > 0
+      ? pool[Math.floor(Math.random() * pool.length)]
+      : null;
+
+  if (pick && pick !== currentUrl) {
     memoryImageCache.set(key, pick);
     persistCache().catch(() => {});
     listeners.forEach((fn) => fn(key, pick));
     return pick;
   }
 
-  // No local candidates — do a full server fetch
-  return resolveCharacterImage(char, true);
+  // If still no pool, run a forced resolution and pick
+  const freshUrl = await resolveCharacterImage(char, true);
+  if (freshUrl) {
+    memoryImageCache.set(key, freshUrl);
+    persistCache().catch(() => {});
+    listeners.forEach((fn) => fn(key, freshUrl));
+    return freshUrl;
+  }
+
+  return null;
 }
 
 /**
