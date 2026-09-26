@@ -892,7 +892,7 @@ const server = http.createServer(async (request, response) => {
     return sendJson(response, 200, {
       status: 'healthy',
       service: 'GuildTalk Backend',
-      version: '1.0.3',
+      version: '1.0.4',
       uptime: Math.round(process.uptime()),
       timestamp: new Date().toISOString(),
     });
@@ -2445,17 +2445,17 @@ const server = http.createServer(async (request, response) => {
     // ----------------------------------------------------------------------
     if (request.method === 'GET' && pathname === '/app/version') {
       return sendJson(response, 200, {
-        latestVersion: process.env.APP_LATEST_VERSION || '1.0.3',
-        latestVersionCode: Number(process.env.APP_LATEST_VERSION_CODE || 4),
+        latestVersion: process.env.APP_LATEST_VERSION || '1.0.4',
+        latestVersionCode: Number(process.env.APP_LATEST_VERSION_CODE || 5),
         apkUrl: process.env.APP_APK_URL || 'https://expo.dev/accounts/samjoshua2002/projects/guildtalk/builds',
         title: 'New GuideTalk Update Available! 🚀',
-        message: 'GuideTalk v1.0.3 introduces authentic high-res character portraits for all heroes & real figures, fixes chat connectivity, and syncs Starred Guild favorites seamlessly.',
+        message: 'GuideTalk v1.0.4 brings live Google-style instant character search with Wikipedia & AniList, 100% synchronized notifications, and instant 1-tap chat.',
         releaseNotes: [
-          'High-definition real portrait images for all characters, cinema heroes, and real-life figures (no more anime-only faces or paper/object placeholders)',
-          'Resolved NativeRequest chat URL crash with resilient Azure OpenAI endpoints',
-          'Perfect real-time sync between Home Starred Guild and Favorites tab',
-          'Intelligent non-intrusive companion check-ins rotating across your actual favorited legends',
-          'Persistent background keep-alive keeping MongoDB Atlas and Render cloud server active 24/7',
+          'Live Google-style instant search: find any character or anime figure while typing with official HD art',
+          'AniList GraphQL integration for high-definition anime studio portraits and character lore',
+          'Verbatim notification sync: phone status bar and in-app bell modal match 100%',
+          'Instant 1-tap Change Look character styling in chat',
+          'Production-ready notification intervals and performance enhancements',
         ],
         forceUpdate: false,
       });

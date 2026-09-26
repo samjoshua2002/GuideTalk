@@ -607,17 +607,17 @@ export async function getInAppNotifications(
     });
   });
 
-  // 2. Official App Updates & Changelog (v1.0.3 Release)
+  // 2. Official App Updates & Changelog (v1.0.4 Release)
   const appUpdates: InAppNotification[] = [
     {
-      id: 'update-v103-release',
+      id: 'update-v104-release',
       type: 'app_update',
-      title: "What's New in GuideTalk v1.0.3 🎉",
-      body: 'Major update! Real-life portraits & cinema heroes via Wikipedia & Studio Vault, 1-tap Look Switcher, live search autocomplete, and conversational AI push notifications.',
+      title: "What's New in GuideTalk v1.0.4 🎉",
+      body: 'Major release! Live Google-style instant search with Wikipedia & AniList, 1-tap direct chat, 100% synced in-app/outside push notifications, and production performance tuning.',
       timeAgo: 'Just now',
       timestamp: Date.now() - 30000,
-      unread: !readSet.has('update-v103-release'),
-      badge: 'v1.0.3 Update',
+      unread: !readSet.has('update-v104-release'),
+      badge: 'v1.0.4 Update',
     },
     {
       id: 'update-cinema-real-portraits',

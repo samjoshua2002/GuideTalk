@@ -2,7 +2,7 @@
   "expo": {
     "name": "GuideTalk",
     "slug": "guildtalk",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
     "scheme": "guidetalk",
     "icon": "./assets/images/icon.png",
@@ -30,7 +30,7 @@
         "backgroundColor": "#F4CD2A"
       },
       "package": "com.samjoshua2002.guidetalk",
-      "versionCode": 4,
+      "versionCode": 5,
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
         "POST_NOTIFICATIONS",
