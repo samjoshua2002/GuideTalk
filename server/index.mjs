@@ -2498,7 +2498,7 @@ const server = http.createServer(async (request, response) => {
       return sendJson(response, 200, {
         latestVersion: process.env.APP_LATEST_VERSION || '1.0.6',
         latestVersionCode: Number(process.env.APP_LATEST_VERSION_CODE || 7),
-        apkUrl: process.env.APP_APK_URL || 'https://expo.dev/accounts/samjoshua2002/projects/guildtalk/builds',
+        apkUrl: process.env.APP_APK_URL || 'https://expo.dev/artifacts/eas/F47jYsqvnEJDj44OAIObDc0p1Emd4kMgH-k7OosN_vg.apk',
         title: 'New GuideTalk Update Available! 🚀',
         message: 'GuideTalk v1.0.6 brings smooth live OTA progress tracking, instant companion look stability, and proactive feed sync.',
         releaseNotes: [

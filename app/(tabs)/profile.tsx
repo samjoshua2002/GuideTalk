@@ -150,7 +150,6 @@ export default function ProfileScreen() {
   };
 
   const handleInstallUpdate = async () => {
-    if (!updateInfo?.apkUrl && !otaUpdateAvailable) return;
     if (isDownloading) return;
 
     triggerHaptic('heavy');
@@ -159,8 +158,8 @@ export default function ProfileScreen() {
     setDownloadError(null);
     progressAnim.setValue(0);
 
-    // If an OTA update is available from Expo Updates, fetch and reload
-    if (otaUpdateAvailable && Updates.isEnabled) {
+    // 1. In-app Expo OTA update: downloads within app & reloads immediately
+    if (Updates.isEnabled && Platform.OS !== 'web') {
       setIsDownloading(true);
       let curP = 0.08;
       setDownloadProgress(curP);
@@ -192,70 +191,55 @@ export default function ProfileScreen() {
         triggerHaptic('success');
         setTimeout(async () => {
           await Updates.reloadAsync();
-        }, 1000);
+        }, 800);
         return;
       } catch (e: any) {
         clearInterval(otaTimer);
-        setDownloadDone(false);
-        setDownloadError(e?.message || 'OTA update failed to apply.');
-        triggerHaptic('light');
-        return;
-      } finally {
-        setIsDownloading(false);
+        console.log('OTA fetch in profile failed, falling back to direct APK:', e);
       }
     }
 
-    const apkUrl = updateInfo?.apkUrl || '';
-    const isDirectApk = apkUrl.toLowerCase().split('?')[0].endsWith('.apk');
+    // 2. Direct APK download and install inside app for Android
+    const rawApk = updateInfo?.apkUrl || '';
+    const apkUrl = rawApk.toLowerCase().includes('.apk')
+      ? rawApk
+      : 'https://expo.dev/artifacts/eas/F47jYsqvnEJDj44OAIObDc0p1Emd4kMgH-k7OosN_vg.apk';
 
-    // If it's a web page / release notes URL or non-Android, open directly in external browser
-    if (!isDirectApk || Platform.OS !== 'android') {
+    if (Platform.OS === 'android') {
+      setIsDownloading(true);
       try {
-        await Linking.openURL(apkUrl);
-      } catch (err) {
-        setDownloadDone(false);
-        setDownloadError('Unable to open update link.');
-      }
-      return;
-    }
-
-    // Direct APK download and install for Android
-    setIsDownloading(true);
-    try {
-      const destFile = new FileSystem.File(FileSystem.Paths.cache, 'guidetalk_update.apk');
-      if (destFile.exists) {
-        try {
-          destFile.delete();
-        } catch {}
-      }
-
-      const downloadTask = FileSystem.File.createDownloadTask(
-        apkUrl,
-        destFile,
-        {
-          onProgress: (data) => {
-            const { bytesWritten, totalBytes } = data;
-            const ratio = totalBytes > 0 ? bytesWritten / totalBytes : 0;
-            setDownloadProgress(ratio);
-            Animated.timing(progressAnim, {
-              toValue: ratio,
-              duration: 120,
-              useNativeDriver: false,
-            }).start();
-          },
+        const destFile = new FileSystem.File(FileSystem.Paths.cache, 'guidetalk_update.apk');
+        if (destFile.exists) {
+          try {
+            destFile.delete();
+          } catch {}
         }
-      );
 
-      const result = await downloadTask.downloadAsync();
-      if (!result?.uri) {
-        throw new Error('Download failed: No file URI received.');
-      }
+        const downloadTask = FileSystem.File.createDownloadTask(
+          apkUrl,
+          destFile,
+          {
+            onProgress: (data) => {
+              const { bytesWritten, totalBytes } = data;
+              const ratio = totalBytes > 0 ? bytesWritten / totalBytes : 0;
+              setDownloadProgress(ratio);
+              Animated.timing(progressAnim, {
+                toValue: ratio,
+                duration: 100,
+                useNativeDriver: false,
+              }).start();
+            },
+          }
+        );
 
-      setDownloadProgress(1);
-      progressAnim.setValue(1);
+        const result = await downloadTask.downloadAsync();
+        if (!result?.uri) {
+          throw new Error('Download failed: No file URI received.');
+        }
 
-      // Launch Android package installer
-      try {
+        setDownloadProgress(1);
+        progressAnim.setValue(1);
+
         const contentUri = await FileSystem.getContentUriAsync(result.uri);
         await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
           data: contentUri,
@@ -263,22 +247,18 @@ export default function ProfileScreen() {
           type: 'application/vnd.android.package-archive',
         });
         setDownloadDone(true);
-        setDownloadError(null);
-        triggerHaptic('medium');
-      } catch (launchErr: any) {
-        console.warn('Intent launcher error:', launchErr);
-        // Fallback: open URL in browser so user can download & install directly
-        await Linking.openURL(apkUrl);
-        setDownloadDone(true);
-        setDownloadError(null);
+        return;
+      } catch (err: any) {
+        console.log('APK download error in profile:', err);
+        setDownloadError(err?.message || 'Download failed within app.');
+        return;
+      } finally {
+        setIsDownloading(false);
       }
-    } catch (e: any) {
-      setDownloadDone(false);
-      setDownloadError('Download failed. Please try again.');
-      triggerHaptic('light');
-    } finally {
-      setIsDownloading(false);
     }
+
+    setDownloadError('Update could not be applied automatically.');
+    setIsDownloading(false);
   };
 
   const spinInterpolate = spinAnim.interpolate({

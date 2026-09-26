@@ -326,32 +326,41 @@ export default function DiscoverScreen() {
           const currentVer = getEffectiveAppVersion();
           const currentCode = getEffectiveVersionCode();
 
+          // 1. Prioritize Expo OTA updates (downloads within app & reloads immediately)
+          if (Updates.isEnabled && Platform.OS !== 'web') {
+            try {
+              const check = await Updates.checkForUpdateAsync();
+              if (check.isAvailable) {
+                setOtaAvailable(true);
+                setAvailableUpdate({
+                  latestVersion: '1.0.6',
+                  latestVersionCode: currentCode + 1,
+                  apkUrl: '',
+                  title: 'New Update Available! 🚀',
+                  message: 'A fresh update is ready to download and reload directly within the app.',
+                  releaseNotes: [
+                    'Live In-App OTA Update: Instant download & reload without browser redirects',
+                    'Authentic Character Looks: Verified portraits only with zero dummy image padding',
+                    'Series Protagonist Resolution: Instant lead recognition (Patrick Jane, Walter White)',
+                    'Dynamic Home & Activity Sync: Instant hide/delete without screen desync',
+                    'System Notification Permission: Android status bar and lockscreen push reminders',
+                  ],
+                  forceUpdate: false,
+                });
+                setUpdateModalVisible(true);
+                return;
+              }
+            } catch (otaErr) {
+              console.log('OTA check error on mount:', otaErr);
+            }
+          }
+
+          // 2. Fallback to server version check
           const info = await fetchAppVersion();
           if (info && (info.latestVersionCode > currentCode || info.latestVersion !== currentVer)) {
             setAvailableUpdate(info);
             setUpdateModalVisible(true);
             return;
-          }
-
-          if (Updates.isEnabled && Platform.OS !== 'web') {
-            const check = await Updates.checkForUpdateAsync();
-            if (check.isAvailable) {
-              setOtaAvailable(true);
-              setAvailableUpdate({
-                latestVersion: currentVer,
-                latestVersionCode: currentCode + 1,
-                apkUrl: '',
-                title: 'New Update Available',
-                message: 'A fresh update is ready to download and install.',
-                releaseNotes: [
-                  'AniList & Wikipedia live portrait engine improvements',
-                  'Instant companion look switcher & outfit previews',
-                  'System status bar notifications when outside the app',
-                ],
-                forceUpdate: false,
-              });
-              setUpdateModalVisible(true);
-            }
           }
         } catch {}
       })();

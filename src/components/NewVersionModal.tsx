@@ -77,7 +77,6 @@ export function NewVersionModal({
   const progressAnim = useRef(new Animated.Value(0)).current;
 
   const handleUpdatePress = async () => {
-    if (!updateInfo?.apkUrl && !otaUpdateAvailable) return;
     if (isDownloading) return;
 
     triggerHaptic('heavy');
@@ -88,8 +87,8 @@ export function NewVersionModal({
     setDownloadError(null);
     progressAnim.setValue(0);
 
-    // 1. Expo OTA update
-    if (otaUpdateAvailable && Updates.isEnabled) {
+    // 1. In-app Expo OTA update: downloads within app & reloads immediately
+    if (Updates.isEnabled && Platform.OS !== 'web') {
       let currentP = 0.08;
       setDownloadProgress(currentP);
       progressAnim.setValue(currentP);
@@ -119,82 +118,72 @@ export function NewVersionModal({
         triggerHaptic('success');
         setTimeout(async () => {
           await Updates.reloadAsync();
-        }, 1000);
+        }, 800);
         return;
       } catch (err: any) {
         clearInterval(otaProgressInterval);
-        setDownloadError(err?.message || 'OTA update failed to apply.');
+        console.log('OTA fetch in modal failed, falling back to direct APK:', err);
+      }
+    }
+
+    // 2. Direct APK download inside app & launch Android installer
+    const rawApkUrl = updateInfo?.apkUrl || '';
+    const directApk = rawApkUrl.toLowerCase().includes('.apk')
+      ? rawApkUrl
+      : 'https://expo.dev/artifacts/eas/F47jYsqvnEJDj44OAIObDc0p1Emd4kMgH-k7OosN_vg.apk';
+
+    if (Platform.OS === 'android') {
+      try {
+        const destFile = new FileSystem.File(FileSystem.Paths.cache, 'guidetalk_update.apk');
+        if (destFile.exists) {
+          try {
+            destFile.delete();
+          } catch {}
+        }
+
+        const downloadTask = FileSystem.File.createDownloadTask(directApk, destFile, {
+          onProgress: (data) => {
+            const { bytesWritten, totalBytes } = data;
+            const ratio = totalBytes > 0 ? bytesWritten / totalBytes : 0;
+            setDownloadProgress(ratio);
+            setDownloadBytes({ written: bytesWritten, total: totalBytes });
+            Animated.timing(progressAnim, {
+              toValue: ratio,
+              duration: 100,
+              useNativeDriver: false,
+            }).start();
+          },
+        });
+
+        await downloadTask.downloadAsync();
+
+        setDownloadProgress(1);
+        Animated.timing(progressAnim, {
+          toValue: 1,
+          duration: 150,
+          useNativeDriver: false,
+        }).start();
+
+        setDownloadDone(true);
+        triggerHaptic('success');
+
+        const contentUri = await FileSystem.getContentUriAsync(destFile.uri);
+        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+          data: contentUri,
+          flags: 1,
+          type: 'application/vnd.android.package-archive',
+        });
+        return;
+      } catch (apkErr: any) {
+        console.log('APK download error:', apkErr);
+        setDownloadError(apkErr?.message || 'Failed to download installer within app.');
         setIsDownloading(false);
         return;
       }
     }
 
-    const apkUrl = updateInfo?.apkUrl || '';
-    const isDirectApk = apkUrl.toLowerCase().split('?')[0].endsWith('.apk');
-
-    // 2. Web or non-Android redirect
-    if (!isDirectApk || Platform.OS !== 'android') {
-      try {
-        await Linking.openURL(apkUrl);
-        setIsDownloading(false);
-      } catch {
-        setDownloadError('Unable to open update link.');
-        setIsDownloading(false);
-      }
-      return;
-    }
-
-    // 3. Android APK direct download and package installer
-    try {
-      const destFile = new FileSystem.File(FileSystem.Paths.cache, 'guidetalk_update.apk');
-      if (destFile.exists) {
-        try {
-          destFile.delete();
-        } catch {}
-      }
-
-      const downloadTask = FileSystem.File.createDownloadTask(apkUrl, destFile, {
-        onProgress: (data) => {
-          const { bytesWritten, totalBytes } = data;
-          const ratio = totalBytes > 0 ? bytesWritten / totalBytes : 0;
-          setDownloadProgress(ratio);
-          setDownloadBytes({ written: bytesWritten, total: totalBytes });
-          Animated.timing(progressAnim, {
-            toValue: ratio,
-            duration: 100,
-            useNativeDriver: false,
-          }).start();
-        },
-      });
-
-      const result = await downloadTask.downloadAsync();
-      if (!result?.uri) {
-        throw new Error('Download failed: No file URI received.');
-      }
-
-      setDownloadProgress(1);
-      progressAnim.setValue(1);
-
-      try {
-        const contentUri = await FileSystem.getContentUriAsync(result.uri);
-        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-          data: contentUri,
-          flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
-          type: 'application/vnd.android.package-archive',
-        });
-        setDownloadDone(true);
-      } catch (installErr: any) {
-        try {
-          await Linking.openURL(apkUrl);
-        } catch {
-          setDownloadError('Installer could not launch automatically.');
-        }
-      }
-    } catch (err: any) {
-      setDownloadError(err?.message || 'Download failed. Please check internet connection.');
-    } finally {
-      setIsDownloading(false);
-    }
+    setDownloadError('Update could not be applied automatically.');
+    setIsDownloading(false);
   };
 
   const versionTag = updateInfo?.latestVersion ? `v${updateInfo.latestVersion}` : 'New Version';
