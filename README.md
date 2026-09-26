@@ -9,12 +9,16 @@
 
 <br/>
 
-[![Expo](https://img.shields.io/badge/Expo-SDK%2051-000020?style=for-the-badge&logo=expo&logoColor=white)](https://expo.dev)
-[![React Native](https://img.shields.io/badge/React%20Native-0.74-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://reactnative.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![MongoDB](https://img.shields.io/badge/MongoDB-Local-47A248?style=for-the-badge&logo=mongodb&logoColor=white)](https://mongodb.com)
-[![Azure OpenAI](https://img.shields.io/badge/Azure%20OpenAI-GPT-0089D6?style=for-the-badge&logo=microsoftazure&logoColor=white)](https://azure.microsoft.com/en-us/products/ai-services/openai-service)
-[![License](https://img.shields.io/badge/License-MIT-purple?style=for-the-badge)](LICENSE)
+[![Expo](https://img.shields.io/badge/Expo-SDK%2057-000020?style=for-the-badge&logo=expo&logoColor=white)](https://expo.dev)
+[![React Native](https://img.shields.io/badge/React%20Native-0.86-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://reactnative.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?style=for-the-badge&logo=mongodb&logoColor=white)](https://mongodb.com)
+[![Azure OpenAI](https://img.shields.io/badge/Azure%20OpenAI-Luna%20%26%20Chat-0089D6?style=for-the-badge&logo=microsoftazure&logoColor=white)](https://azure.microsoft.com/en-us/products/ai-services/openai-service)
+[![Version](https://img.shields.io/badge/Release-v1.0.4-green?style=for-the-badge)](https://github.com/samjoshua2002/GuideTalk)
+
+<br/>
+
+> 📖 **Comprehensive Developer Documentation:** For architecture deep-dives, sequence diagrams, MongoDB schemas, and complete API endpoint specifications, see [**DOCUMENTATION.md**](DOCUMENTATION.md).
 
 </div>
 
@@ -27,41 +31,41 @@
 <td width="50%">
 
 ### 🤖 AI Character Chat
-Chat with characters from Genshin Impact, anime, and more — each one responds in their own unique personality powered by Azure OpenAI.
+Chat with characters from anime, cinema, and history — each one responds in their authentic voice powered by Azure OpenAI with resilient safety fallback.
 
 </td>
 <td width="50%">
 
-### 🎙️ Voice Messages
-Record and play back voice messages with smooth animated waveforms and full dark-mode support.
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-### 🔍 Dynamic Discovery Feed
-Real-time image fetching from the internet — the feed always shows fresh, relevant character content based on your activity.
-
-</td>
-<td width="50%">
-
-### 🎠 Spotlight Carousel
-Netflix-style smoky blur backdrop with silky smooth manual swipe transitions.
+### 🔍 Google-Style Instant Search
+Instant live character search as you type! Merges local character cache, Wikipedia Knowledge Graph, and AniList GraphQL with 1-tap direct chat.
 
 </td>
 </tr>
 <tr>
 <td width="50%">
 
-### 🌗 Dark / Light Theme
-Full theme support with high-contrast audio bubbles and adaptive UI across every screen.
+### 🎭 Studio Vault & "Change Look"
+Cycle character appearances (comic, cinema, anime) with real-time sync across all message bubble avatars.
 
 </td>
 <td width="50%">
 
-### 🧭 Rival Encounters
-Dynamically fetched rival/companion suggestions that update based on the character you're currently chatting with.
+### 🔔 Synchronized Companion Reminders
+100% parity between phone system shade push notifications and in-app bell modal notifications.
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 🎙️ Waveform Voice Messages & TTS
+Record voice messages with animated decibel waveforms (`expo-audio`), transcribe voice input, and listen with custom character TTS.
+
+</td>
+<td width="50%">
+
+### 🎠 Spotlight Carousel & Rivals
+Silky-smooth Netflix-style glass carousel and dynamic canonical rivals with conflict prompts.
 
 </td>
 </tr>
@@ -73,14 +77,14 @@ Dynamically fetched rival/companion suggestions that update based on the charact
 
 | Layer | Technology |
 |:---|:---|
-| 📱 Mobile App | Expo SDK 51 + React Native |
-| 🧭 Routing | Expo Router (file-based) |
-| 🔤 Language | TypeScript |
-| ⚙️ Backend | Node.js + Express (ESM modules) |
-| 🗄️ Database | MongoDB |
-| 🧠 AI | Azure OpenAI (GPT) |
-| 🖼️ Image Fetching | Dynamic internet search with DiceBear fallback |
-| 🎞️ Animation | React Native Reanimated + Animated API |
+| 📱 Mobile App | Expo SDK 57 + React Native 0.86 |
+| 🧭 Routing | Expo Router v4 (Typed Routes) |
+| 🔤 Language | TypeScript 6.0 |
+| ⚙️ Backend | Node.js (ESM microservice on Render) |
+| 🗄️ Database | MongoDB Atlas |
+| 🧠 AI Engine | Azure OpenAI (`gpt-5.6-luna` / `gpt-5.1-chat`) |
+| 🌐 Knowledge Base | Wikipedia REST & AniList Public GraphQL |
+| 🔔 Notifications | Expo Notifications with persistent synchronization |
 
 ---
 
