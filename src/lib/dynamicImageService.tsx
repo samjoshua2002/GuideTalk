@@ -196,13 +196,19 @@ export async function cycleCharacterImage(
     } catch {}
   }
 
+  // Filter out stock photos or blank URLs
+  const cleanPool = pool.filter(
+    (u) => u && typeof u === 'string' && !u.includes('unsplash.com') && !u.includes('dicebear.com') && !u.includes('.svg')
+  );
+  const activePool = cleanPool.length > 0 ? cleanPool : pool;
+
   // Pick a candidate that is guaranteed different from currentUrl
-  const filtered = pool.filter((u) => u !== currentUrl && u !== char.avatarUrl);
+  const filtered = activePool.filter((u) => u !== currentUrl && u !== char.avatarUrl);
   const pick =
     filtered.length > 0
       ? filtered[Math.floor(Math.random() * filtered.length)]
-      : pool.length > 0
-      ? pool[Math.floor(Math.random() * pool.length)]
+      : activePool.length > 0
+      ? activePool[Math.floor(Math.random() * activePool.length)]
       : null;
 
   if (pick && pick !== currentUrl) {
@@ -214,14 +220,67 @@ export async function cycleCharacterImage(
 
   // If still no pool, run a forced resolution and pick
   const freshUrl = await resolveCharacterImage(char, true);
-  if (freshUrl) {
+  if (freshUrl && !freshUrl.includes('unsplash.com')) {
     memoryImageCache.set(key, freshUrl);
     persistCache().catch(() => {});
     listeners.forEach((fn) => fn(key, freshUrl));
     return freshUrl;
   }
 
-  return null;
+  return pick || freshUrl;
+}
+
+/**
+ * Returns available character look candidates for previewing and selecting inside chat.
+ */
+export async function getCharacterCandidateLooks(
+  char?: Partial<Character> | { name: string; series?: string; avatarUrl?: string } | null
+): Promise<string[]> {
+  if (!char || !char.name) return [];
+  const key = getCacheKey(char.name, char.series);
+  let pool = candidatesCache.get(key) || [];
+
+  if (pool.length < 2) {
+    try {
+      const [serverRes, wikiCandidates] = await Promise.allSettled([
+        fetchDynamicCharacterImage(char.name, char.series, true),
+        directClientWikipediaCandidates(char.name, char.series),
+      ]);
+      const gathered = new Set<string>();
+      if (char.avatarUrl && !char.avatarUrl.includes('unsplash.com')) gathered.add(char.avatarUrl);
+      if (serverRes.status === 'fulfilled' && serverRes.value?.candidates) {
+        serverRes.value.candidates.forEach((u) => gathered.add(u));
+      }
+      if (wikiCandidates.status === 'fulfilled' && wikiCandidates.value) {
+        wikiCandidates.value.forEach((u) => gathered.add(u));
+      }
+      if (gathered.size > 0) {
+        pool = Array.from(gathered);
+        candidatesCache.set(key, pool);
+      }
+    } catch {}
+  }
+
+  const cleanPool = pool.filter(
+    (u) => u && typeof u === 'string' && !u.includes('unsplash.com') && !u.includes('dicebear.com') && !u.includes('.svg')
+  );
+  if (cleanPool.length > 0) return cleanPool.slice(0, 8);
+  if (char.avatarUrl && !char.avatarUrl.includes('unsplash.com')) return [char.avatarUrl];
+  return pool.slice(0, 8);
+}
+
+/**
+ * Manually select a specific look from available candidate looks.
+ */
+export function selectCharacterLook(
+  char: Partial<Character> | { name: string; series?: string },
+  chosenUrl: string
+): void {
+  if (!char || !char.name || !chosenUrl) return;
+  const key = getCacheKey(char.name, char.series);
+  memoryImageCache.set(key, chosenUrl);
+  persistCache().catch(() => {});
+  listeners.forEach((fn) => fn(key, chosenUrl));
 }
 
 /**

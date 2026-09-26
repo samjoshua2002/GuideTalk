@@ -256,6 +256,51 @@ export function getCharacterReminderMessage(charName: string, userName: string):
 // 3. SCHEDULE 1-HOUR RECURRING PUSH NOTIFICATION (ONLY FOR LIKED CHARACTERS)
 // ----------------------------------------------------------------------
 
+const PERSISTED_REMINDERS_KEY = 'guidetalk_persisted_reminders_v2';
+
+export async function savePersistedReminder(reminder: {
+  id: string;
+  title: string;
+  body: string;
+  characterId: string;
+  characterName: string;
+  characterAvatar?: string;
+  timestamp: number;
+}): Promise<void> {
+  try {
+    let list: any[] = [];
+    if (Platform.OS === 'web') {
+      const raw = globalThis.localStorage?.getItem(PERSISTED_REMINDERS_KEY);
+      if (raw) list = JSON.parse(raw);
+    } else {
+      const raw = await SecureStore.getItemAsync(PERSISTED_REMINDERS_KEY);
+      if (raw) list = JSON.parse(raw);
+    }
+    const filtered = list.filter((item) => item.characterId !== reminder.characterId);
+    filtered.unshift(reminder);
+    const serialized = JSON.stringify(filtered.slice(0, 20));
+    if (Platform.OS === 'web') {
+      globalThis.localStorage?.setItem(PERSISTED_REMINDERS_KEY, serialized);
+    } else {
+      await SecureStore.setItemAsync(PERSISTED_REMINDERS_KEY, serialized);
+    }
+  } catch {}
+}
+
+export async function getPersistedReminders(): Promise<any[]> {
+  try {
+    let raw: string | null = null;
+    if (Platform.OS === 'web') {
+      raw = globalThis.localStorage?.getItem(PERSISTED_REMINDERS_KEY);
+    } else {
+      raw = await SecureStore.getItemAsync(PERSISTED_REMINDERS_KEY);
+    }
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function cancelCompanionReminders(): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
@@ -284,8 +329,8 @@ export async function scheduleHourlyCompanionReminder(
     await Notifications.cancelAllScheduledNotificationsAsync();
 
     // Rotate across the user's favorited characters over time
-    // Schedule intervals at realistic times (2h, 5h, 9h, 15h, 24h)
-    const intervalsSeconds = [7200, 18000, 32400, 54000, 86400];
+    // Production schedule intervals: 2h, 6h, 12h, 24h, 48h
+    const intervalsSeconds = [7200, 21600, 43200, 86400, 172800];
     const titles = [
       (name: string) => `${name} sent a message`,
       (name: string) => `${name} wants to talk`,
@@ -314,6 +359,17 @@ export async function scheduleHourlyCompanionReminder(
         message = getCharacterReminderMessage(char.name, userName);
       }
 
+      // Persist to guarantee 100% parity with in-app notification feed
+      await savePersistedReminder({
+        id: `char-reminder-${char.id}`,
+        title,
+        body: message,
+        characterId: char.id,
+        characterName: char.name,
+        characterAvatar: char.avatarUrl,
+        timestamp: Date.now(),
+      });
+
       await Notifications.scheduleNotificationAsync({
         content: {
           title,
@@ -324,7 +380,7 @@ export async function scheduleHourlyCompanionReminder(
             characterName: char.name,
           },
           sound: true,
-          priority: Notifications.AndroidNotificationPriority.DEFAULT,
+          priority: Notifications.AndroidNotificationPriority.HIGH,
           vibrate: [0, 250, 250, 250],
           color: '#F4CD2A',
         },
@@ -333,7 +389,7 @@ export async function scheduleHourlyCompanionReminder(
           seconds: intervalsSeconds[i],
           repeats: false,
           channelId: 'companion-reminders',
-        },
+        } as any,
       });
     }
   } catch (err) {
@@ -357,6 +413,15 @@ export async function sendInstantTestNotification(
 
     const message = getCharacterReminderMessage(characterName, userName);
 
+    await savePersistedReminder({
+      id: `char-reminder-${characterId}`,
+      title: `${characterName} misses you!`,
+      body: message,
+      characterId,
+      characterName,
+      timestamp: Date.now(),
+    });
+
     await Notifications.scheduleNotificationAsync({
       content: {
         title: `${characterName} misses you!`,
@@ -376,7 +441,7 @@ export async function sendInstantTestNotification(
         seconds: 5,
         repeats: false,
         channelId: 'companion-reminders',
-      },
+      } as any,
     });
     return true;
   } catch (err) {
@@ -479,12 +544,14 @@ export async function getInAppNotifications(
   likedCharacters: Character[],
   userName: string = 'friend'
 ): Promise<InAppNotification[]> {
-  const [readIds, dismissedIds] = await Promise.all([
+  const [readIds, dismissedIds, persistedReminders] = await Promise.all([
     getReadNotificationIds(),
     getDismissedNotificationIds(),
+    getPersistedReminders(),
   ]);
   const readSet = new Set(readIds);
   const dismissedSet = new Set(dismissedIds);
+  const reminderMap = new Map<string, any>(persistedReminders.map((r) => [r.characterId, r]));
 
   const notifications: InAppNotification[] = [];
 
@@ -492,17 +559,46 @@ export async function getInAppNotifications(
   likedCharacters.forEach((char, idx) => {
     const notifId = `char-reminder-${char.id}`;
     if (dismissedSet.has(notifId)) return;
-    const times = ['15m ago', '1h ago', '3h ago', '5h ago', 'yesterday'];
-    const timeAgo = times[idx % times.length];
-    const message = getCharacterReminderMessage(char.name, userName);
+
+    // Check if there is an active persisted push notification for this companion
+    const persisted = reminderMap.get(char.id);
+    let title = persisted?.title;
+    let message = persisted?.body;
+    let timestamp = persisted?.timestamp;
+
+    if (!persisted) {
+      title = `${char.name} sent a message`;
+      message = getCharacterReminderMessage(char.name, userName);
+      timestamp = Date.now() - (idx + 1) * 3600000;
+      savePersistedReminder({
+        id: notifId,
+        title,
+        body: message,
+        characterId: char.id,
+        characterName: char.name,
+        characterAvatar: char.avatarUrl,
+        timestamp,
+      });
+    }
+
+    // Dynamic relative time formatting from real timestamp
+    const diffMs = Math.max(0, Date.now() - (timestamp || Date.now()));
+    let timeAgo = 'Just now';
+    if (diffMs > 86400000) {
+      timeAgo = `${Math.floor(diffMs / 86400000)}d ago`;
+    } else if (diffMs > 3600000) {
+      timeAgo = `${Math.floor(diffMs / 3600000)}h ago`;
+    } else if (diffMs > 60000) {
+      timeAgo = `${Math.floor(diffMs / 60000)}m ago`;
+    }
 
     notifications.push({
       id: notifId,
       type: 'companion_reminder',
-      title: `${char.name} misses you`,
+      title,
       body: message,
       timeAgo,
-      timestamp: Date.now() - (idx + 1) * 3600000,
+      timestamp: timestamp || Date.now(),
       unread: !readSet.has(notifId),
       characterId: char.id,
       characterName: char.name,

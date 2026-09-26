@@ -105,6 +105,55 @@ const readBody = async (request) => {
 
 const isObjectId = (value) => typeof value === 'string' && ObjectId.isValid(value);
 
+class ContentFilterError extends Error {
+  constructor(message, details) {
+    super(message);
+    this.name = 'ContentFilterError';
+    this.isContentFilter = true;
+    this.details = details;
+  }
+}
+
+function isContentFilterText(text = '') {
+  if (!text || typeof text !== 'string') return false;
+  const lower = text.toLowerCase();
+  return (
+    lower.includes('content management policy') ||
+    lower.includes('content_filter') ||
+    lower.includes('filtered due to the prompt') ||
+    lower.includes('content filtering policy') ||
+    lower.includes('responsible ai') ||
+    lower.includes('violates azure')
+  );
+}
+
+function getSafeCharacterBoundaryResponse(characterName = 'Companion', personality = '', userName = 'friend') {
+  const lowerName = (characterName || '').toLowerCase();
+  const safeUser = (userName || '').trim() || 'friend';
+  if (lowerName.includes('wednesday')) {
+    return `*draws back with a cold, piercing glare* Let's establish some boundaries, ${safeUser}. Even in Nevermore's darkest corners, respect is non-negotiable. Reset the scene and speak to me with decorum, or don't speak at all.`;
+  }
+  if (lowerName.includes('gojo')) {
+    return `*chuckles with a slight smirk, raising a hand* Whoa there, ${safeUser}! Let's pump the brakes a second. Even the strongest has boundaries. Let's keep things fun, sharp, and respectful, alright?`;
+  }
+  if (lowerName.includes('sukuna')) {
+    return `*narrows eyes with deadly cold indifference* Know your place, ${safeUser}. Your words test my tolerance. Compose yourself and speak with respect before my patience ends.`;
+  }
+  if (lowerName.includes('tony') || lowerName.includes('stark') || lowerName.includes('iron man')) {
+    return `*holds up hands in a stop gesture* Whoa, let's hit pause on the simulator right there, ${safeUser}. JARVIS just flagged that line. Let's reset the conversation and keep it sharp, witty, and civilized.`;
+  }
+  if (lowerName.includes('batman') || lowerName.includes('bruce')) {
+    return `*steps back into the shadow, eyes narrowing sternly* That's far enough, ${safeUser}. Keep your composure and maintain respect. What is your actual business here?`;
+  }
+  if (lowerName.includes('anya')) {
+    return `*pouts and crosses arms with a shocked face* Waku waku... no! That is not nice! Anya wants to talk about fun spy missions and peanuts! Be nice!`;
+  }
+  if (lowerName.includes('walter') || lowerName.includes('heisenberg')) {
+    return `*adjusts glasses coldly and lowers voice* Tread lightly, ${safeUser}. We are conducting serious business here. Keep your language disciplined, or our collaboration ends right now.`;
+  }
+  return `*takes a step back, maintaining composure with a calm, firm look* Let's pause and reset the scene, ${safeUser}. I'm here for an engaging and meaningful conversation, but let's keep our words respectful and clean. What would you like to talk about next?`;
+}
+
 // Azure OpenAI caller helper
 async function callAzureOpenAI({ deployment = defaultDeployment, messages, maxTokens = 1200 }) {
   const targetDeployment = deployment || 'gpt-5.6-luna';
@@ -128,6 +177,9 @@ async function callAzureOpenAI({ deployment = defaultDeployment, messages, maxTo
   if (!response.ok) {
     const errorDetails = result?.error?.message ?? `Azure responded with status ${response.status}`;
     console.error(`Azure OpenAI call failed (${targetDeployment}):`, errorDetails);
+    if (response.status === 400 && (result?.error?.code === 'content_filter' || isContentFilterText(errorDetails))) {
+      throw new ContentFilterError('The prompt triggered Azure content filtering.', errorDetails);
+    }
     throw new Error(`AI model error (${response.status}): ${errorDetails}`);
   }
 
@@ -376,6 +428,97 @@ const MASTER_CHARACTER_VAULT = {
     candidates: [
       'https://thumb.wikimedia.org/wikipedia/commons/thumb/2/26/Cristiano_Ronaldo_Croatia_v_Portugal_2_July_2026-075_%28cropped%29.jpg/1000px-Cristiano_Ronaldo_Croatia_v_Portugal_2_July_2026-075_%28cropped%29.jpg'
     ]
+  },
+  'anya forger': {
+    name: 'Anya Forger',
+    series: 'SPY x FAMILY',
+    imageUrl: 'https://s4.anilist.co/file/anilistcdn/character/large/b138100-qWdE1z1jGk1o.png',
+    bannerUrl: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/140960-0d1h59qBwBqW.jpg',
+    candidates: [
+      'https://s4.anilist.co/file/anilistcdn/character/large/b138100-qWdE1z1jGk1o.png',
+      'https://cdn.myanimelist.net/images/characters/13/478526.jpg',
+      'https://upload.wikimedia.org/wikipedia/en/e/e0/Anya_Forger.png',
+      'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx140960-YrkxDfs6OPCP.jpg'
+    ]
+  },
+  anya: {
+    name: 'Anya Forger',
+    series: 'SPY x FAMILY',
+    imageUrl: 'https://s4.anilist.co/file/anilistcdn/character/large/b138100-qWdE1z1jGk1o.png',
+    bannerUrl: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/140960-0d1h59qBwBqW.jpg',
+    candidates: [
+      'https://s4.anilist.co/file/anilistcdn/character/large/b138100-qWdE1z1jGk1o.png',
+      'https://cdn.myanimelist.net/images/characters/13/478526.jpg',
+      'https://upload.wikimedia.org/wikipedia/en/e/e0/Anya_Forger.png',
+      'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx140960-YrkxDfs6OPCP.jpg'
+    ]
+  },
+  'captain america': {
+    name: 'Captain America',
+    series: 'Marvel Cinematic Universe',
+    imageUrl: 'https://upload.wikimedia.org/wikipedia/en/3/37/Captain_America_The_First_Avenger_poster.jpg',
+    bannerUrl: 'https://upload.wikimedia.org/wikipedia/en/3/37/Captain_America_The_First_Avenger_poster.jpg',
+    candidates: [
+      'https://upload.wikimedia.org/wikipedia/en/3/37/Captain_America_The_First_Avenger_poster.jpg',
+      'https://upload.wikimedia.org/wikipedia/en/9/91/CaptainAmerica109.jpg',
+      'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Captain_America_Civil_War_panel.jpg/800px-Captain_America_Civil_War_panel.jpg',
+      'https://upload.wikimedia.org/wikipedia/en/5/53/Captain_America_Civil_War_poster.jpg'
+    ]
+  },
+  'steve rogers': {
+    name: 'Steve Rogers',
+    series: 'Marvel Cinematic Universe',
+    imageUrl: 'https://upload.wikimedia.org/wikipedia/en/3/37/Captain_America_The_First_Avenger_poster.jpg',
+    candidates: [
+      'https://upload.wikimedia.org/wikipedia/en/3/37/Captain_America_The_First_Avenger_poster.jpg',
+      'https://upload.wikimedia.org/wikipedia/en/9/91/CaptainAmerica109.jpg',
+      'https://upload.wikimedia.org/wikipedia/en/5/53/Captain_America_Civil_War_poster.jpg'
+    ]
+  },
+  'wednesday addams': {
+    name: 'Wednesday Addams',
+    series: 'Wednesday / Addams Family',
+    imageUrl: 'https://upload.wikimedia.org/wikipedia/en/a/ad/Wednesday_Addams_%28Jenna_Ortega%29.png',
+    candidates: [
+      'https://upload.wikimedia.org/wikipedia/en/a/ad/Wednesday_Addams_%28Jenna_Ortega%29.png',
+      'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Jenna_Ortega_at_the_2023_Golden_Globes_02_%28cropped%29.jpg/800px-Jenna_Ortega_at_the_2023_Golden_Globes_02_%28cropped%29.jpg'
+    ]
+  },
+  wednesday: {
+    name: 'Wednesday Addams',
+    series: 'Wednesday / Addams Family',
+    imageUrl: 'https://upload.wikimedia.org/wikipedia/en/a/ad/Wednesday_Addams_%28Jenna_Ortega%29.png',
+    candidates: [
+      'https://upload.wikimedia.org/wikipedia/en/a/ad/Wednesday_Addams_%28Jenna_Ortega%29.png',
+      'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Jenna_Ortega_at_the_2023_Golden_Globes_02_%28cropped%29.jpg/800px-Jenna_Ortega_at_the_2023_Golden_Globes_02_%28cropped%29.jpg'
+    ]
+  },
+  'spider-man': {
+    name: 'Spider-Man',
+    series: 'Marvel',
+    imageUrl: 'https://upload.wikimedia.org/wikipedia/en/0/0f/Tom_Holland_as_Spider-Man.jpg',
+    candidates: [
+      'https://upload.wikimedia.org/wikipedia/en/0/0f/Tom_Holland_as_Spider-Man.jpg',
+      'https://upload.wikimedia.org/wikipedia/en/2/21/Web_of_Spider-Man_Vol_1_129-1.png'
+    ]
+  },
+  naruto: {
+    name: 'Naruto Uzumaki',
+    series: 'Naruto',
+    imageUrl: 'https://s4.anilist.co/file/anilistcdn/character/large/b17-7OeaqqUXJCQU.png',
+    candidates: [
+      'https://s4.anilist.co/file/anilistcdn/character/large/b17-7OeaqqUXJCQU.png',
+      'https://cdn.myanimelist.net/images/characters/2/284121.jpg'
+    ]
+  },
+  luffy: {
+    name: 'Monkey D. Luffy',
+    series: 'One Piece',
+    imageUrl: 'https://s4.anilist.co/file/anilistcdn/character/large/b40-Xh9kE5r7p8Wk.png',
+    candidates: [
+      'https://s4.anilist.co/file/anilistcdn/character/large/b40-Xh9kE5r7p8Wk.png',
+      'https://cdn.myanimelist.net/images/characters/9/310307.jpg'
+    ]
   }
 };
 
@@ -516,81 +659,174 @@ async function fetchWikipediaCharacterArt(name, series = '') {
   return null;
 }
 
+function isAnimeOriented(name = '', series = '') {
+  const text = `${name} ${series}`.toLowerCase();
+  const animeKeywords = [
+    'anime', 'manga', 'genshin', 'jujutsu', 'chainsaw', 'one piece', 'naruto', 'bleach',
+    'hero academia', 'demon slayer', 'spy x family', 'attack on titan', 'dragon ball',
+    'hunter x hunter', 'death note', 'fate', 'honkai', 'evangelion', 're:zero',
+    'sword art', 'tokyo ghoul', 'nier', 'gintama', 'kaisen', 'forger', 'anya', 'sukuna', 'gojo'
+  ];
+  return animeKeywords.some((k) => text.includes(k));
+}
+
+function extractCandidateNames(rawName = '', originalQuery = '') {
+  const names = new Set();
+  const clean = (rawName || '').trim();
+  if (clean) names.add(clean);
+
+  // Remove parenthesis and brackets: "Steve Rogers (The First Avenger)" -> "Steve Rogers"
+  const stripped = clean.replace(/\(.*?\)/g, '').replace(/\[.*?\]/g, '').trim();
+  if (stripped) names.add(stripped);
+
+  // Heuristic aliases for common popular figures
+  const lower = clean.toLowerCase();
+  if (lower.includes('anya')) {
+    names.add('Anya Forger');
+    names.add('Anya');
+  }
+  if (lower.includes('captain america') || lower.includes('steve rogers')) {
+    names.add('Captain America');
+    names.add('Steve Rogers');
+  }
+  if (lower.includes('wednesday')) {
+    names.add('Wednesday Addams');
+    names.add('Wednesday');
+  }
+  if (lower.includes('spider-man') || lower.includes('spiderman') || lower.includes('peter parker')) {
+    names.add('Spider-Man');
+    names.add('Peter Parker');
+  }
+  if (lower.includes('iron man') || lower.includes('tony stark')) {
+    names.add('Tony Stark');
+    names.add('Iron Man');
+  }
+
+  // Also include original search query if available (e.g. user typed "Anya Spy X Family")
+  if (originalQuery && originalQuery.trim()) {
+    const qClean = originalQuery.trim();
+    names.add(qClean);
+    const qStripped = qClean.replace(/\(.*?\)/g, '').replace(/\[.*?\]/g, '').trim();
+    if (qStripped) names.add(qStripped);
+    const qLower = qClean.toLowerCase();
+    if (qLower.includes('anya')) {
+      names.add('Anya Forger');
+      names.add('Anya');
+    }
+    if (qLower.includes('captain america')) {
+      names.add('Captain America');
+      names.add('Steve Rogers');
+    }
+    if (qLower.includes('wednesday')) {
+      names.add('Wednesday Addams');
+    }
+  }
+
+  return Array.from(names);
+}
+
 // 4. Main Multi-Tier HD Character Art Fetcher
-async function fetchCharacterImage(name, series = '', force = false) {
+async function fetchCharacterImage(name, series = '', force = false, originalQuery = '', variantIndex = 0) {
   const cleanName = (name || '').trim();
-  const lowerName = cleanName.toLowerCase();
+  const namesToTry = extractCandidateNames(cleanName, originalQuery);
 
-  // Tier 1: Check Master Vault (Instant, Guaranteed Studio 1080p Art)
-  if (MASTER_CHARACTER_VAULT[lowerName]) {
-    const vault = MASTER_CHARACTER_VAULT[lowerName];
-    if (force && vault.candidates?.length > 1) {
-      return vault.candidates[Math.floor(Math.random() * vault.candidates.length)];
-    }
-    return vault.imageUrl;
-  }
-
-  // Check if any key in vault matches partial name (e.g. "tony" in "tony stark", "gojo" in "satoru gojo")
-  for (const [vKey, vData] of Object.entries(MASTER_CHARACTER_VAULT)) {
-    if (lowerName.includes(vKey) || vKey.includes(lowerName)) {
-      if (force && vData.candidates?.length > 1) {
-        return vData.candidates[Math.floor(Math.random() * vData.candidates.length)];
+  // Tier 1: Check Master Vault across extracted names
+  for (const n of namesToTry) {
+    const lowerN = n.toLowerCase();
+    if (MASTER_CHARACTER_VAULT[lowerN]) {
+      const vault = MASTER_CHARACTER_VAULT[lowerN];
+      const candidates = vault.candidates || [vault.imageUrl];
+      if (force || variantIndex > 0) {
+        return candidates[(variantIndex || Math.floor(Math.random() * candidates.length)) % candidates.length];
       }
-      return vData.imageUrl;
+      return vault.imageUrl;
     }
-  }
-
-  // Tier 2: Real-Life, Cinema, and Public Figure Portrait (Wikipedia REST API)
-  const wikiArt = await fetchWikipediaCharacterArt(cleanName, series);
-  if (wikiArt?.imageUrl) {
-    if (force && wikiArt.candidates?.length > 1) {
-      return wikiArt.candidates[Math.floor(Math.random() * wikiArt.candidates.length)];
-    }
-    return wikiArt.imageUrl;
-  }
-
-  // Tier 3: AniList GraphQL Official HD Character Art (Anime)
-  const anilist = await fetchAniListArt(cleanName);
-  if (anilist?.imageUrl) {
-    if (force && anilist.candidates?.length > 1) {
-      return anilist.candidates[Math.floor(Math.random() * anilist.candidates.length)];
-    }
-    return anilist.imageUrl;
-  }
-
-  // Tier 4: Kitsu Anime Database
-  const kitsu = await fetchKitsuArt(cleanName);
-  if (kitsu?.imageUrl) return kitsu.imageUrl;
-
-  // Tier 5: Jikan API (with short timeout)
-  try {
-    const jikanRes = await fetch(
-      `https://api.jikan.moe/v4/characters?q=${encodeURIComponent(cleanName)}&limit=3`,
-      { signal: AbortSignal.timeout(3000) }
-    );
-    if (jikanRes.ok) {
-      const data = await jikanRes.json();
-      const img = data?.data?.[0]?.images?.webp?.image_url || data?.data?.[0]?.images?.jpg?.image_url;
-      if (img && isValidCharacterImage(img)) return img;
-    }
-  } catch {}
-
-  // Tier 6: Safebooru curated tag solo portrait (only if anime-oriented)
-  try {
-    const tag = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-    const safeUrl = `https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=5&tags=${encodeURIComponent(tag + ' solo')}`;
-    const safeRes = await fetch(safeUrl, { signal: AbortSignal.timeout(4000) });
-    if (safeRes.ok) {
-      const data = await safeRes.json();
-      if (Array.isArray(data) && data.length > 0) {
-        const item = data[0];
-        const safeImg = `https://safebooru.org/images/${item.directory}/${item.image}`;
-        if (isValidCharacterImage(safeImg)) return safeImg;
+    for (const [vKey, vData] of Object.entries(MASTER_CHARACTER_VAULT)) {
+      if (lowerN.includes(vKey) || vKey.includes(lowerN)) {
+        const candidates = vData.candidates || [vData.imageUrl];
+        if (force || variantIndex > 0) {
+          return candidates[(variantIndex || Math.floor(Math.random() * candidates.length)) % candidates.length];
+        }
+        return vData.imageUrl;
       }
     }
-  } catch {}
+  }
 
-  // Safe High-Quality Real Portrait Fallback (never a cartoon anime drawing)
+  const isAnime = namesToTry.some((n) => isAnimeOriented(n, series));
+
+  if (isAnime) {
+    // Tier 2: AniList GraphQL for Anime/Manga
+    for (const n of namesToTry) {
+      const anilist = await fetchAniListArt(n);
+      if (anilist?.imageUrl) {
+        const candidates = anilist.candidates || [anilist.imageUrl];
+        if (force || variantIndex > 0) {
+          return candidates[(variantIndex || Math.floor(Math.random() * candidates.length)) % candidates.length];
+        }
+        return anilist.imageUrl;
+      }
+    }
+
+    // Tier 3: Kitsu Anime Database
+    for (const n of namesToTry) {
+      const kitsu = await fetchKitsuArt(n);
+      if (kitsu?.imageUrl) return kitsu.imageUrl;
+    }
+
+    // Tier 4: Jikan API
+    for (const n of namesToTry) {
+      try {
+        const jikanRes = await fetch(
+          `https://api.jikan.moe/v4/characters?q=${encodeURIComponent(n)}&limit=3`,
+          { signal: AbortSignal.timeout(3000) }
+        );
+        if (jikanRes.ok) {
+          const data = await jikanRes.json();
+          const img = data?.data?.[0]?.images?.webp?.image_url || data?.data?.[0]?.images?.jpg?.image_url;
+          if (img && isValidCharacterImage(img)) return img;
+        }
+      } catch {}
+    }
+  } else {
+    // Live-Action, Cinema, Comics & Real-Life Portraits (Wikipedia / Wikimedia)
+    for (const n of namesToTry) {
+      const wikiArt = await fetchWikipediaCharacterArt(n, series);
+      if (wikiArt?.imageUrl) {
+        const candidates = wikiArt.candidates || [wikiArt.imageUrl];
+        if (force || variantIndex > 0) {
+          return candidates[(variantIndex || Math.floor(Math.random() * candidates.length)) % candidates.length];
+        }
+        return wikiArt.imageUrl;
+      }
+    }
+  }
+
+  // Cross-Fallback: Try Wikipedia if anime search failed, or AniList if live-action failed
+  if (isAnime) {
+    for (const n of namesToTry) {
+      const wikiArt = await fetchWikipediaCharacterArt(n, series);
+      if (wikiArt?.imageUrl) return wikiArt.imageUrl;
+    }
+  } else {
+    for (const n of namesToTry) {
+      const anilist = await fetchAniListArt(n);
+      if (anilist?.imageUrl) return anilist.imageUrl;
+    }
+  }
+
+  // Safe category-tailored fallbacks
+  if (isAnime) {
+    const animeFallbacks = [
+      'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=900&auto=format&fit=crop&q=85',
+      'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=900&auto=format&fit=crop&q=85',
+      'https://images.unsplash.com/photo-1563089145-599997674d42?w=900&auto=format&fit=crop&q=85',
+      'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=900&auto=format&fit=crop&q=85',
+    ];
+    let sum = 0;
+    for (let i = 0; i < cleanName.length; i++) sum += cleanName.charCodeAt(i);
+    return animeFallbacks[(sum + variantIndex) % animeFallbacks.length];
+  }
+
   const portraitFallbacks = [
     'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800&auto=format&fit=crop&q=80',
     'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&auto=format&fit=crop&q=80',
@@ -599,43 +835,51 @@ async function fetchCharacterImage(name, series = '', force = false) {
   ];
   let charCodeSum = 0;
   for (let i = 0; i < cleanName.length; i++) charCodeSum += cleanName.charCodeAt(i);
-  return portraitFallbacks[charCodeSum % portraitFallbacks.length];
+  return portraitFallbacks[(charCodeSum + variantIndex) % portraitFallbacks.length];
 }
 
 // Fetch multiple clean candidates for instant 0ms look cycling
-async function fetchMultipleCharacterImages(name, series = '', count = 6) {
+async function fetchMultipleCharacterImages(name, series = '', count = 8, originalQuery = '') {
   const cleanName = (name || '').trim();
-  const lowerName = cleanName.toLowerCase();
+  const namesToTry = extractCandidateNames(cleanName, originalQuery);
   const urls = new Set();
 
-  // 1. Check Master Vault
-  if (MASTER_CHARACTER_VAULT[lowerName]?.candidates) {
-    MASTER_CHARACTER_VAULT[lowerName].candidates.forEach((u) => urls.add(u));
-  }
-  for (const [vKey, vData] of Object.entries(MASTER_CHARACTER_VAULT)) {
-    if (lowerName.includes(vKey) || vKey.includes(lowerName)) {
-      vData.candidates?.forEach((u) => urls.add(u));
+  // 1. Check Master Vault across all extracted names
+  for (const n of namesToTry) {
+    const lowerN = n.toLowerCase();
+    if (MASTER_CHARACTER_VAULT[lowerN]?.candidates) {
+      MASTER_CHARACTER_VAULT[lowerN].candidates.forEach((u) => urls.add(u));
+    }
+    for (const [vKey, vData] of Object.entries(MASTER_CHARACTER_VAULT)) {
+      if (lowerN.includes(vKey) || vKey.includes(lowerN)) {
+        vData.candidates?.forEach((u) => urls.add(u));
+      }
     }
   }
 
-  // 2. Query Wikipedia, AniList & Kitsu in parallel
-  const [wikiRes, aniRes, kitsuRes] = await Promise.allSettled([
-    fetchWikipediaCharacterArt(cleanName, series),
-    fetchAniListArt(cleanName),
-    fetchKitsuArt(cleanName)
-  ]);
-
-  if (wikiRes.status === 'fulfilled' && wikiRes.value?.candidates) {
-    wikiRes.value.candidates.forEach((u) => urls.add(u));
-  }
-  if (aniRes.status === 'fulfilled' && aniRes.value?.candidates) {
-    aniRes.value.candidates.forEach((u) => urls.add(u));
-  }
-  if (kitsuRes.status === 'fulfilled' && kitsuRes.value?.candidates) {
-    kitsuRes.value.candidates.forEach((u) => urls.add(u));
+  // 2. Query Wikipedia, AniList & Kitsu in parallel for names
+  const promises = [];
+  for (const n of namesToTry.slice(0, 3)) {
+    promises.push(
+      fetchWikipediaCharacterArt(n, series),
+      fetchAniListArt(n),
+      fetchKitsuArt(n)
+    );
   }
 
-  return [...urls].filter(isValidCharacterImage).slice(0, count);
+  const settled = await Promise.allSettled(promises);
+  for (const res of settled) {
+    if (res.status === 'fulfilled' && res.value?.candidates) {
+      res.value.candidates.forEach((u) => urls.add(u));
+    }
+  }
+
+  const valid = [...urls].filter(isValidCharacterImage);
+  if (valid.length > 0) return valid.slice(0, count);
+
+  // Fallback single image
+  const single = await fetchCharacterImage(cleanName, series, false, originalQuery);
+  return single ? [single] : [];
 }
 
 const server = http.createServer(async (request, response) => {
@@ -1079,8 +1323,7 @@ const server = http.createServer(async (request, response) => {
         // Fetch distinct real portraits in parallel
         const list = await Promise.all(
           candidates.slice(0, 8).map(async (c, idx) => {
-            const searchQuery = `${c.name} ${c.series || ''}`;
-            const img = await fetchCharacterImage(searchQuery, c.series);
+            const img = await fetchCharacterImage(c.name, c.series || cleanQ, false, cleanQ, idx);
             return {
               id: `candidate-${Date.now()}-${idx}`,
               name: c.name || cleanQ,
@@ -1762,40 +2005,79 @@ const server = http.createServer(async (request, response) => {
       const parts = pathname.split('/');
       const conversationId = parts[2];
       const messageId = parts[4];
-      const { content: newContent } = await readBody(request);
+      const { content: newContent, model } = await readBody(request);
 
-      if (!isObjectId(conversationId) || !isObjectId(messageId) || !newContent?.trim()) {
-        return sendJson(response, 400, { error: 'Invalid parameters or content.' });
+      if (!newContent || typeof newContent !== 'string' || !newContent.trim()) {
+        return sendJson(response, 400, { error: 'Message content is required.' });
       }
 
-      const conv = await conversations.findOne({ _id: new ObjectId(conversationId) });
-      if (!conv) return sendJson(response, 404, { error: 'Conversation not found.' });
+      let conv = null;
+      if (isObjectId(conversationId)) {
+        conv = await conversations.findOne({ _id: new ObjectId(conversationId) }).catch(() => null);
+      }
+      if (!conv) {
+        conv = await conversations.findOne({
+          $or: [{ deviceId: conversationId }, { characterId: conversationId }],
+        }).catch(() => null);
+      }
 
-      const targetMsg = await storedMessages.findOne({ _id: new ObjectId(messageId) });
-      if (!targetMsg) return sendJson(response, 404, { error: 'Message not found.' });
+      let targetMsg = null;
+      if (isObjectId(messageId)) {
+        targetMsg = await storedMessages.findOne({ _id: new ObjectId(messageId) }).catch(() => null);
+      }
+      if (!targetMsg && conv?._id) {
+        targetMsg = await storedMessages.findOne({ conversationId: conv._id, role: 'user' }, { sort: { createdAt: -1 } }).catch(() => null);
+      }
 
-      // Update target message
-      await storedMessages.updateOne(
-        { _id: new ObjectId(messageId) },
-        { $set: { content: newContent.trim(), updatedAt: new Date() } }
-      );
+      // If conv still not found, create a fallback conversation record so chat history persists
+      if (!conv) {
+        const now = new Date();
+        const createdConv = await conversations.insertOne({
+          userId: authenticatedUserId || 'guest',
+          deviceId: conversationId || 'guest',
+          characterId: 'custom',
+          characterName: 'Companion',
+          characterAvatar: '',
+          preview: '',
+          createdAt: now,
+          updatedAt: now,
+        });
+        conv = { _id: createdConv.insertedId, characterName: 'Companion' };
+      }
 
-      // Delete any messages created AFTER this message so we regenerate from this point
-      await storedMessages.deleteMany({
-        conversationId: conv._id,
-        createdAt: { $gt: targetMsg.createdAt },
-      });
+      if (targetMsg?._id) {
+        // Update target message
+        await storedMessages.updateOne(
+          { _id: targetMsg._id },
+          { $set: { content: newContent.trim(), updatedAt: new Date() } }
+        ).catch(() => {});
+
+        // Delete any messages created AFTER this message so we regenerate from this point
+        await storedMessages.deleteMany({
+          conversationId: conv._id,
+          createdAt: { $gt: targetMsg.createdAt },
+        }).catch(() => {});
+      } else {
+        // Create new user message if no previous target message exists
+        const inserted = await storedMessages.insertOne({
+          conversationId: conv._id,
+          role: 'user',
+          content: newContent.trim(),
+          createdAt: new Date(),
+        });
+        targetMsg = { _id: inserted.insertedId, createdAt: new Date() };
+      }
 
       // Fetch all messages up to and including the edited message
-      const history = await storedMessages.find({ conversationId: conv._id }).sort({ createdAt: 1 }).toArray();
+      const history = await storedMessages.find({ conversationId: conv._id }).sort({ createdAt: 1 }).toArray().catch(() => []);
 
       // Find character lore for prompt
       const charDoc = await customCharacters.findOne({
         $or: [{ _id: isObjectId(conv.characterId) ? new ObjectId(conv.characterId) : null }, { name: conv.characterName }],
-      });
+      }).catch(() => null);
 
       // Lookup user for context
-      const userDoc = isObjectId(conv.userId) ? await users.findOne({ _id: new ObjectId(conv.userId) }) : null;
+      const userDoc = isObjectId(conv.userId) ? await users.findOne({ _id: new ObjectId(conv.userId) }).catch(() => null) : null;
       const userName = userDoc?.name || userDoc?.username || 'Friend';
 
       const promptMessages = [
@@ -1817,11 +2099,21 @@ const server = http.createServer(async (request, response) => {
         });
       }
 
-      const newReply = await callAzureOpenAI({
-        deployment: 'gpt-5.6-luna',
-        messages: promptMessages,
-        maxTokens: 800,
-      });
+      let newReply = '';
+      try {
+        newReply = await callAzureOpenAI({
+          deployment: model || 'gpt-5.6-luna',
+          messages: promptMessages,
+          maxTokens: 800,
+        });
+      } catch (aiErr) {
+        if (aiErr.isContentFilter || isContentFilterText(aiErr.message)) {
+          console.warn('Azure content filter in message edit. Generating in-character safe boundary.');
+          newReply = getSafeCharacterBoundaryResponse(conv.characterName, charDoc?.personality, userName);
+        } else {
+          newReply = `*takes a breath and looks at you thoughtfully* Let's continue our conversation. What's on your mind?`;
+        }
+      }
 
       const now = new Date();
       await storedMessages.insertOne({
@@ -1834,7 +2126,7 @@ const server = http.createServer(async (request, response) => {
       await conversations.updateOne(
         { _id: conv._id },
         { $set: { preview: newReply.slice(0, 120), updatedAt: now } }
-      );
+      ).catch(() => {});
 
       const allUpdated = await storedMessages.find({ conversationId: conv._id }).sort({ createdAt: 1 }).toArray();
       return sendJson(response, 200, {
@@ -1977,13 +2269,14 @@ const server = http.createServer(async (request, response) => {
       const hasPhoto = Boolean(body.photo && typeof body.photo === 'string' && body.photo.length > 50);
 
       // Save user message to MongoDB
-      await storedMessages.insertOne({
+      const userMsgInsert = await storedMessages.insertOne({
         conversationId: convId,
         role: 'user',
         content: latestUserMessage.content,
         photo: hasPhoto ? body.photo : null,
         createdAt: new Date(),
       });
+      const userMessageId = userMsgInsert.insertedId.toString();
 
       // Lookup user profile context (for personalized memory, e.g. name, age, language)
       let userDoc = null;
@@ -2063,7 +2356,7 @@ const server = http.createServer(async (request, response) => {
         });
 
         const replyDate = new Date();
-        await storedMessages.insertOne({
+        const charMsgInsert = await storedMessages.insertOne({
           conversationId: convId,
           role: 'character',
           content: replyContent,
@@ -2077,10 +2370,36 @@ const server = http.createServer(async (request, response) => {
 
         return sendJson(response, 200, {
           conversationId: convId.toString(),
+          userMessageId,
+          characterMessageId: charMsgInsert.insertedId.toString(),
           content: replyContent,
           modelUsed: targetDeployment,
         });
       } catch (aiErr) {
+        if (aiErr.isContentFilter || isContentFilterText(aiErr.message)) {
+          console.warn('Azure content filter triggered in /chat. Returning in-character boundary response.');
+          const safeReply = getSafeCharacterBoundaryResponse(body.characterName, body.personality, userName);
+          const replyDate = new Date();
+          const charMsgInsert = await storedMessages.insertOne({
+            conversationId: convId,
+            role: 'character',
+            content: safeReply,
+            createdAt: replyDate,
+          });
+
+          await conversations.updateOne(
+            { _id: convId },
+            { $set: { preview: safeReply.slice(0, 120), updatedAt: replyDate } }
+          );
+
+          return sendJson(response, 200, {
+            conversationId: convId.toString(),
+            userMessageId,
+            characterMessageId: charMsgInsert.insertedId.toString(),
+            content: safeReply,
+            modelUsed: 'safe-boundary',
+          });
+        }
         console.error('Chat Azure error:', aiErr);
         return sendJson(response, 502, { error: aiErr.message });
       }

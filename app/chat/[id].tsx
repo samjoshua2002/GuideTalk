@@ -27,9 +27,15 @@ import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import { useTheme } from '@/src/context/ThemeContext';
 import { useAuth } from '@/src/context/AuthContext';
-import { getCharacter, characters, getAllBuiltinCharacters } from '@/src/data/characters';
 import { Character } from '@/src/types/character';
-import { DynamicCharacterImage, resolveCharacterImage, cycleCharacterImage } from '@/src/lib/dynamicImageService';
+import { getCharacter, characters, getAllBuiltinCharacters } from '@/src/data/characters';
+import {
+  DynamicCharacterImage,
+  resolveCharacterImage,
+  cycleCharacterImage,
+  getCharacterCandidateLooks,
+  selectCharacterLook,
+} from '@/src/lib/dynamicImageService';
 import {
   createConversation,
   getConversationMessages,
@@ -217,6 +223,7 @@ export default function ChatScreen() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState<string>('');
   const [isRegenerating, setIsRegenerating] = useState<boolean>(false);
+  const [availableLooks, setAvailableLooks] = useState<string[]>([]);
 
   // Long press context menu
   const [contextMenu, setContextMenu] = useState<{ visible: boolean; message: Message | null }>({
@@ -360,17 +367,35 @@ export default function ChatScreen() {
     setIsHiddenFromRecent(newState);
   };
 
+  const handleSelectLook = (lookUrl: string) => {
+    if (!character || !lookUrl) return;
+    triggerHaptic('medium');
+    selectCharacterLook(character, lookUrl);
+    setCharacter((prev: Character | null) => (prev ? { ...prev, avatarUrl: lookUrl, coverUrl: lookUrl } : null));
+  };
+
   const handleRandomizeImage = async () => {
     if (!character) return;
     triggerHaptic('medium');
     setIsResolvingImage(true);
     const nextUrl = await cycleCharacterImage(character);
     if (nextUrl) {
-      setCharacter((prev) => (prev ? { ...prev, avatarUrl: nextUrl, coverUrl: nextUrl } : null));
+      setCharacter((prev: Character | null) => (prev ? { ...prev, avatarUrl: nextUrl, coverUrl: nextUrl } : null));
+      getCharacterCandidateLooks(character).then((looks) => {
+        if (looks && looks.length > 0) setAvailableLooks(looks);
+      });
     }
     setIsResolvingImage(false);
     triggerHaptic('success');
   };
+
+  useEffect(() => {
+    if (character?.name) {
+      getCharacterCandidateLooks(character).then((looks) => {
+        if (looks && looks.length > 0) setAvailableLooks(looks);
+      });
+    }
+  }, [character?.id, character?.name]);
 
   const handleClearHistory = async () => {
     if (!character) return;
@@ -586,7 +611,7 @@ export default function ChatScreen() {
     };
   }, [character]);
 
-  const suggestions = useMemo(() => character?.starters.slice(0, 3) ?? [], [character]);
+  const suggestions: string[] = useMemo(() => character?.starters.slice(0, 3) ?? [], [character]);
 
   // Photo Picker
   const pickPhoto = async () => {
@@ -665,14 +690,21 @@ export default function ChatScreen() {
         speakingStyle: speakingStyle || undefined,
       });
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `${Date.now()}-reply`,
+      setMessages((prev) => {
+        const next = [...prev];
+        if (reply.userMessageId && next.length >= 1) {
+          const userIdx = next.map((m) => m.id).lastIndexOf(userMessage.id);
+          if (userIdx !== -1) {
+            next[userIdx] = { ...next[userIdx], id: reply.userMessageId };
+          }
+        }
+        next.push({
+          id: reply.characterMessageId || `${Date.now()}-reply`,
           role: 'character',
           content: reply.content,
-        },
-      ]);
+        });
+        return next;
+      });
       if (character) {
         saveLastConversationSnippet(character.id, character.name, character.series, reply.content);
       }
@@ -695,35 +727,82 @@ export default function ChatScreen() {
   };
 
   const submitEdit = async () => {
-    if (!editingMessageId || !conversationId || !editContent.trim()) return;
+    if (!editingMessageId || !character || !editContent.trim()) return;
+    const trimmedEdit = editContent.trim();
+    const targetIdx = messages.findIndex((m) => m.id === editingMessageId);
+    if (targetIdx === -1) {
+      setEditingMessageId(null);
+      return;
+    }
+
     setIsRegenerating(true);
     setError(null);
+    const prevMessages = [...messages];
+
+    // Optimistically update the message in history and truncate any future messages
+    const updatedUserMsg: Message = { ...messages[targetIdx], content: trimmedEdit };
+    const truncatedHistory = [...messages.slice(0, targetIdx), updatedUserMsg];
+    setMessages(truncatedHistory);
+    setEditingMessageId(null);
+    setEditContent('');
+
     try {
-      const result = await editMessageAndRegenerate({
-        conversationId,
-        messageId: editingMessageId,
-        newContent: editContent.trim(),
-        token,
+      if (conversationId && !conversationId.startsWith('local-')) {
+        try {
+          const result = await editMessageAndRegenerate({
+            conversationId,
+            messageId: editingMessageId,
+            newContent: trimmedEdit,
+            token,
+            model: selectedModel,
+            userName: user?.name,
+            userAge: user?.age,
+            userLanguage: user?.language,
+          });
+
+          if (result && Array.isArray(result.messages) && result.messages.length > 0) {
+            setMessages(
+              result.messages.map((m) => ({
+                id: m.id || `${Date.now()}-${Math.random()}`,
+                role: m.role,
+                content: m.content,
+                photo: m.photo,
+              }))
+            );
+            return;
+          }
+        } catch (serverErr) {
+          console.warn('Server edit failed, using client regeneration fallback:', serverErr);
+        }
+      }
+
+      // Resilient fallback: call requestCharacterReply with truncated history
+      const deviceId = await getDeviceId();
+      const activeUserId = user?.id || deviceId;
+      const reply = await requestCharacterReply({
+        character,
+        conversationId: conversationId || `local-${character.id}-${Date.now()}`,
+        userId: activeUserId,
+        messages: truncatedHistory.map(({ role, content, photo }) => ({ role, content, photo })),
         model: selectedModel,
+        token,
         userName: user?.name,
         userAge: user?.age,
         userLanguage: user?.language,
+        speakingStyle: speakingStyle || undefined,
       });
 
-      if (result && Array.isArray(result.messages)) {
-        setMessages(
-          result.messages.map((m) => ({
-            id: m.id || `${Date.now()}-${Math.random()}`,
-            role: m.role,
-            content: m.content,
-            photo: m.photo,
-          }))
-        );
-      }
-      setEditingMessageId(null);
-      setEditContent('');
+      setMessages([
+        ...truncatedHistory,
+        {
+          id: reply.characterMessageId || `${Date.now()}-reply`,
+          role: 'character',
+          content: reply.content,
+        },
+      ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update message.');
+      setMessages(prevMessages);
     } finally {
       setIsRegenerating(false);
     }
@@ -1038,7 +1117,7 @@ export default function ChatScreen() {
                     {/* Personality Traits */}
                     {Array.isArray(character.personality) && (
                       <View style={styles.modalTagsRow}>
-                        {character.personality.slice(0, 4).map((trait) => (
+                        {character.personality.slice(0, 4).map((trait: string) => (
                           <View
                             key={trait}
                             style={[
@@ -1053,6 +1132,73 @@ export default function ChatScreen() {
                     )}
                   </View>
                 </View>
+
+                {/* SECTION: CHARACTER LOOKS & OUTFITS */}
+                {availableLooks.length > 0 && (
+                  <View style={{ marginBottom: 20 }}>
+                    <View style={styles.speechSectionHeaderRow}>
+                      <Text style={[styles.modalSectionLabel, { color: theme.secondary, marginBottom: 0 }]}>
+                        CHARACTER LOOKS ({availableLooks.length})
+                      </Text>
+                      <Pressable
+                        onPress={handleRandomizeImage}
+                        disabled={isResolvingImage}
+                        hitSlop={6}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                      >
+                        <Ionicons name="shuffle" size={13} color="#007AFF" />
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#007AFF' }}>Cycle Next</Text>
+                      </Pressable>
+                    </View>
+                    <LiquidGlassView style={[styles.modalCard, { paddingVertical: 12, paddingHorizontal: 12 }]} borderRadius={20} intensity={30} elevated>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
+                        {availableLooks.map((lookUri, idx) => {
+                          const isCurrent = character.avatarUrl === lookUri || character.coverUrl === lookUri;
+                          return (
+                            <Pressable
+                              key={lookUri + idx}
+                              onPress={() => handleSelectLook(lookUri)}
+                              style={{
+                                width: 72,
+                                height: 96,
+                                borderRadius: 14,
+                                overflow: 'hidden',
+                                borderWidth: isCurrent ? 2.5 : 1,
+                                borderColor: isCurrent ? '#007AFF' : theme.border,
+                                position: 'relative',
+                                backgroundColor: theme.surfaceSecondary,
+                              }}
+                            >
+                              <Image
+                                source={{ uri: lookUri }}
+                                style={{ width: '100%', height: '100%' }}
+                                contentFit="cover"
+                                contentPosition="top"
+                              />
+                              {isCurrent && (
+                                <View
+                                  style={{
+                                    position: 'absolute',
+                                    top: 4,
+                                    right: 4,
+                                    backgroundColor: '#007AFF',
+                                    borderRadius: 10,
+                                    width: 18,
+                                    height: 18,
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                >
+                                  <Ionicons name="checkmark" size={12} color="#fff" />
+                                </View>
+                              )}
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    </LiquidGlassView>
+                  </View>
+                )}
 
                 {/* SECTION 1: ABOUT THE CHAT */}
                 <Text style={[styles.modalSectionLabel, { color: theme.secondary }]}>ABOUT THE CHAT</Text>

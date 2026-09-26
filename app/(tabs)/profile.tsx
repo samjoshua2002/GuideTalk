@@ -15,6 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system';
 import * as IntentLauncher from 'expo-intent-launcher';
+import * as Linking from 'expo-linking';
+import * as Updates from 'expo-updates';
 import { useTheme } from '@/src/context/ThemeContext';
 import { useAuth } from '@/src/context/AuthContext';
 import { LiquidGlassView } from '@/src/components/LiquidGlassView';
@@ -34,6 +36,7 @@ export default function ProfileScreen() {
   const [updateInfo, setUpdateInfo] = useState<AppVersionInfo | null>(null);
   const [updateChecked, setUpdateChecked] = useState(false);
   const [isUpToDate, setIsUpToDate] = useState(false);
+  const [otaUpdateAvailable, setOtaUpdateAvailable] = useState<boolean>(false);
   // Download progress
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0); // 0–1
@@ -89,10 +92,41 @@ export default function ProfileScreen() {
     setUpdateChecked(false);
     setUpdateInfo(null);
     setIsUpToDate(false);
+    setOtaUpdateAvailable(false);
+    setDownloadDone(false);
+    setDownloadError(null);
     bannerAnim.setValue(0);
     startSpinLoop();
 
     try {
+      // 1. Check Expo OTA updates if supported in this environment
+      if (Updates.isEnabled) {
+        try {
+          const update = await Updates.checkForUpdateAsync();
+          if (update.isAvailable) {
+            setOtaUpdateAvailable(true);
+            setUpdateInfo({
+              latestVersion: 'Over-the-Air Update',
+              latestVersionCode: currentCode + 1,
+              apkUrl: '',
+              title: 'New Update Available',
+              message: 'An over-the-air update is ready to install.',
+              releaseNotes: ['Performance improvements and bug fixes available now.'],
+              forceUpdate: false,
+            });
+            setIsUpToDate(false);
+            stopSpin();
+            setUpdateChecked(true);
+            showUpdateBanner();
+            triggerHaptic('medium');
+            return;
+          }
+        } catch (otaErr) {
+          console.log('Expo Updates check error:', otaErr);
+        }
+      }
+
+      // 2. Check server-based app version / APK
       const info = await fetchAppVersion();
       stopSpin();
       setUpdateChecked(true);
@@ -115,31 +149,63 @@ export default function ProfileScreen() {
   };
 
   const handleInstallUpdate = async () => {
-    if (!updateInfo?.apkUrl) return;
+    if (!updateInfo?.apkUrl && !otaUpdateAvailable) return;
     if (isDownloading) return;
 
     triggerHaptic('heavy');
-    setIsDownloading(true);
     setDownloadProgress(0);
     setDownloadDone(false);
     setDownloadError(null);
     progressAnim.setValue(0);
 
-    // Determine a string cache URI for file operations that still need strings
-    const cacheUri = FileSystem.Paths.cache.uri;
-    const fileUri = cacheUri + 'guidetalk_update.apk';
+    // If an OTA update is available from Expo Updates, fetch and reload
+    if (otaUpdateAvailable && Updates.isEnabled) {
+      setIsDownloading(true);
+      try {
+        await Updates.fetchUpdateAsync();
+        setDownloadDone(true);
+        setDownloadError(null);
+        triggerHaptic('success');
+        setTimeout(async () => {
+          await Updates.reloadAsync();
+        }, 1200);
+        return;
+      } catch (e: any) {
+        setDownloadDone(false);
+        setDownloadError(e?.message || 'OTA update failed to apply.');
+        triggerHaptic('light');
+        return;
+      } finally {
+        setIsDownloading(false);
+      }
+    }
 
+    const apkUrl = updateInfo?.apkUrl || '';
+    const isDirectApk = apkUrl.toLowerCase().split('?')[0].endsWith('.apk');
+
+    // If it's a web page / release notes URL or non-Android, open directly in external browser
+    if (!isDirectApk || Platform.OS !== 'android') {
+      try {
+        await Linking.openURL(apkUrl);
+      } catch (err) {
+        setDownloadDone(false);
+        setDownloadError('Unable to open update link.');
+      }
+      return;
+    }
+
+    // Direct APK download and install for Android
+    setIsDownloading(true);
     try {
-      // Delete any stale cached APK (fallback if needed)
-      // the new v57 File can do this directly, but let's keep getInfoAsync if it still exists. wait, does getInfoAsync exist?
-      // let's use the new File API for this.
       const destFile = new FileSystem.File(FileSystem.Paths.cache, 'guidetalk_update.apk');
       if (destFile.exists) {
-        destFile.delete();
+        try {
+          destFile.delete();
+        } catch {}
       }
 
       const downloadTask = FileSystem.File.createDownloadTask(
-        updateInfo.apkUrl,
+        apkUrl,
         destFile,
         {
           onProgress: (data) => {
@@ -154,26 +220,35 @@ export default function ProfileScreen() {
           },
         }
       );
-      // Removed downloadResumable ref to simplify, unless user wants to pause
 
       const result = await downloadTask.downloadAsync();
-      if (!result?.uri) throw new Error('Download failed');
+      if (!result?.uri) {
+        throw new Error('Download failed: No file URI received.');
+      }
 
       setDownloadProgress(1);
       progressAnim.setValue(1);
-      setDownloadDone(true);
-      triggerHaptic('medium');
 
       // Launch Android package installer
-      if (Platform.OS === 'android') {
+      try {
         const contentUri = await FileSystem.getContentUriAsync(result.uri);
         await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
           data: contentUri,
           flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
           type: 'application/vnd.android.package-archive',
         });
+        setDownloadDone(true);
+        setDownloadError(null);
+        triggerHaptic('medium');
+      } catch (launchErr: any) {
+        console.warn('Intent launcher error:', launchErr);
+        // Fallback: open URL in browser so user can download & install directly
+        await Linking.openURL(apkUrl);
+        setDownloadDone(true);
+        setDownloadError(null);
       }
     } catch (e: any) {
+      setDownloadDone(false);
       setDownloadError('Download failed. Please try again.');
       triggerHaptic('light');
     } finally {
@@ -376,13 +451,13 @@ export default function ProfileScreen() {
               )}
 
               {/* ── Download Complete ── */}
-              {downloadDone && !isDownloading && (
+              {downloadDone && !isDownloading && !downloadError && (
                 <View style={styles.downloadDoneRow}>
                   <View style={[styles.downloadDoneIcon, { backgroundColor: 'rgba(52,199,89,0.15)' }]}>
                     <Ionicons name="checkmark-done-circle" size={18} color="#30D158" />
                   </View>
                   <Text style={[styles.downloadDoneText, { color: '#30D158' }]}>
-                    Download complete — installer launched
+                    {otaUpdateAvailable ? 'Update downloaded — restarting…' : 'Download complete — installer launched'}
                   </Text>
                 </View>
               )}
@@ -398,10 +473,10 @@ export default function ProfileScreen() {
               {/* ── Install Button ── */}
               <Pressable
                 onPress={handleInstallUpdate}
-                disabled={isDownloading || downloadDone}
+                disabled={isDownloading || (downloadDone && !downloadError)}
                 style={({ pressed }) => [
                   styles.installBtn,
-                  (isDownloading || downloadDone) && styles.installBtnDisabled,
+                  (isDownloading || (downloadDone && !downloadError)) && styles.installBtnDisabled,
                   pressed && !isDownloading && !downloadDone && { opacity: 0.88 },
                 ]}
               >
@@ -411,15 +486,23 @@ export default function ProfileScreen() {
                       <Ionicons name="cloud-download" size={17} color="#FFFFFF" />
                       <Text style={styles.installBtnText}>Downloading {Math.round(downloadProgress * 100)}%</Text>
                     </>
-                  ) : downloadDone ? (
+                  ) : downloadDone && !downloadError ? (
                     <>
                       <Ionicons name="checkmark-circle" size={17} color="#FFFFFF" />
-                      <Text style={styles.installBtnText}>Installing...</Text>
+                      <Text style={styles.installBtnText}>
+                        {otaUpdateAvailable ? 'Applying Update…' : 'Installer Launched'}
+                      </Text>
                     </>
                   ) : (
                     <>
                       <Ionicons name="download" size={17} color="#FFFFFF" />
-                      <Text style={styles.installBtnText}>Download & Install</Text>
+                      <Text style={styles.installBtnText}>
+                        {otaUpdateAvailable
+                          ? 'Apply OTA Update'
+                          : updateInfo?.apkUrl && !updateInfo.apkUrl.toLowerCase().split('?')[0].endsWith('.apk')
+                          ? 'Open Update Page'
+                          : 'Download & Install'}
+                      </Text>
                       <Ionicons name="chevron-forward" size={15} color="rgba(255,255,255,0.7)" />
                     </>
                   )}

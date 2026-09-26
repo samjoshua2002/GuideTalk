@@ -372,6 +372,13 @@ export async function listConversations(
 // 3. EMOTIONAL, SMART, SARCASTIC CHAT WITH PHOTO & FALLBACK
 // ----------------------------------------------------------------------
 
+export interface CharacterReplyResult {
+  content: string;
+  modelUsed: string;
+  userMessageId?: string | null;
+  characterMessageId?: string | null;
+}
+
 export async function requestCharacterReply({
   character,
   conversationId,
@@ -396,7 +403,7 @@ export async function requestCharacterReply({
   userAge?: string | number;
   userLanguage?: string;
   speakingStyle?: string;
-}): Promise<{ content: string; modelUsed: string }> {
+}): Promise<CharacterReplyResult> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
 
@@ -424,8 +431,17 @@ export async function requestCharacterReply({
         userLanguage,
       }),
     });
-    return parseResponse<{ content: string; modelUsed: string }>(response);
-  } catch (error) {
+    return await parseResponse<CharacterReplyResult>(response);
+  } catch (error: any) {
+    const errMsg = String(error?.message || '').toLowerCase();
+    if (errMsg.includes('content management policy') || errMsg.includes('filtered due to the prompt') || errMsg.includes('content_filter')) {
+      console.warn('Azure content management policy caught gracefully. Returning boundary response.');
+      return {
+        content: `*takes a step back, maintaining composure with a calm, firm look* Let's pause and reset the scene. I'm here for an engaging and meaningful conversation, but let's keep our words respectful and clean. What would you like to talk about next?`,
+        modelUsed: 'safe-boundary',
+      };
+    }
+
     console.log('Backend chat unreachable, falling back to direct Azure OpenAI:', error);
     // Direct client fallback
     const reply = await directAzureChat({
@@ -517,12 +533,21 @@ async function directAzureChat({
       }),
     });
     if (!response.ok) {
+      const errJson = await response.json().catch(() => null);
+      const errMsg = String(errJson?.error?.message || '').toLowerCase();
+      if (response.status === 400 && (errMsg.includes('content') || errMsg.includes('filter') || errMsg.includes('policy'))) {
+        return `*steps back with a calm, firm look* Let's take a breath and reset the scene. I'm here for an engaging conversation, but let's keep our words respectful and clean. What should we talk about next?`;
+      }
       console.warn(`Direct Azure OpenAI returned status ${response.status}`);
       return `*smiles warmly* I hear you, but my connection wavered for a second. Let's keep talking!`;
     }
     const data = await response.json();
     return data?.choices?.[0]?.message?.content?.trim() || '...';
-  } catch (err) {
+  } catch (err: any) {
+    const errText = String(err?.message || '').toLowerCase();
+    if (errText.includes('content') || errText.includes('filter')) {
+      return `*steps back with a calm, firm look* Let's take a breath and reset the scene. I'm here for an engaging conversation, but let's keep our words respectful and clean.`;
+    }
     console.error('Direct Azure OpenAI network error:', err);
     return `*looks at you attentively* I felt our connection flicker for an instant. Tell me what you're thinking!`;
   }
@@ -696,21 +721,39 @@ export async function editMessageAndRegenerate({
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await apiFetch(
-    `/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}`,
-    {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({
-        content: newContent,
-        model,
-        userName,
-        userAge,
-        userLanguage,
-      }),
+  try {
+    const res = await apiFetch(
+      `/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}`,
+      {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          content: newContent,
+          model,
+          userName,
+          userAge,
+          userLanguage,
+        }),
+      }
+    );
+    return await parseResponse<{ messages: StoredMessage[]; newReply: string }>(res);
+  } catch (err: any) {
+    const msg = String(err?.message || '').toLowerCase();
+    if (msg.includes('content') || msg.includes('filter') || msg.includes('policy')) {
+      return {
+        messages: [
+          {
+            id: messageId,
+            role: 'user',
+            content: newContent,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        newReply: `*takes a breath and looks at you calmly* Let's take a pause and reset the scene. I'm here for a respectful, captivating conversation. What should we talk about next?`,
+      };
     }
-  );
-  return parseResponse<{ messages: StoredMessage[]; newReply: string }>(res);
+    throw err;
+  }
 }
 
 // ----------------------------------------------------------------------

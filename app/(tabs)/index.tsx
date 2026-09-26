@@ -13,6 +13,7 @@ import {
   RefreshControl,
   Easing,
   AppState,
+  Modal,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import * as SecureStore from 'expo-secure-store';
@@ -32,6 +33,7 @@ import { GlowButton } from '@/src/components/GlowButton';
 import { AuthModal } from '@/src/components/AuthModal';
 import { NotificationsModal } from '@/src/components/NotificationsModal';
 
+import * as Notifications from 'expo-notifications';
 import { OnboardingStoryboard } from '@/src/components/OnboardingStoryboard';
 import { triggerHaptic } from '@/src/lib/haptics';
 import {
@@ -42,9 +44,19 @@ import {
   markAllNotificationsAsRead,
   dismissNotification,
   clearAllNotifications,
+  savePersistedReminder,
   InAppNotification,
 } from '@/src/lib/notificationService';
-import { getHiddenRecentIds, subscribeToFavorites, getFavoriteIds, loadAllFavoriteCharacters } from '@/src/lib/favorites';
+import {
+  getHiddenRecentIds,
+  subscribeToFavorites,
+  getFavoriteIds,
+  loadAllFavoriteCharacters,
+  toggleFavorite,
+  toggleHideFromRecent,
+  isFavorite,
+  isCharHiddenFromRecent,
+} from '@/src/lib/favorites';
 import { getInteractedCharacterIds } from '@/src/lib/activityTracker';
 import { DynamicCharacterImage } from '@/src/lib/dynamicImageService';
 import {
@@ -275,17 +287,24 @@ export default function DiscoverScreen() {
     }
   }, [user?.id, characterList]);
 
+  const refreshNotifications = useCallback(async () => {
+    const likedChars: Character[] = favoriteCharacters || [];
+    const currentName = user?.name || user?.username || 'friend';
+    const notifs = await getInAppNotifications(likedChars, currentName);
+    setNotificationsList(notifs);
+  }, [favoriteCharacters, user?.name, user?.username]);
+
   useEffect(() => {
     // STRICT: Only send companion reminders for characters the user explicitly liked/favorited!
     const likedChars: Character[] = favoriteCharacters || [];
     const currentName = user?.name || user?.username || 'friend';
 
-    getInAppNotifications(likedChars, currentName).then((notifs) => {
-      setNotificationsList(notifs);
-    });
+    refreshNotifications();
 
     if (likedChars.length > 0) {
-      scheduleHourlyCompanionReminder(likedChars, currentName);
+      scheduleHourlyCompanionReminder(likedChars, currentName).then(() => {
+        refreshNotifications();
+      });
     } else {
       cancelCompanionReminders();
     }
@@ -297,13 +316,46 @@ export default function DiscoverScreen() {
         } else {
           cancelCompanionReminders();
         }
+      } else if (nextAppState === 'active') {
+        // App returned to foreground — immediately re-sync notifications
+        refreshNotifications();
       }
     });
 
+    let notifReceivedSub: any = null;
+    let notifResponseSub: any = null;
+    if (Platform.OS !== 'web') {
+      notifReceivedSub = Notifications.addNotificationReceivedListener((notification) => {
+        const data = notification.request.content.data;
+        savePersistedReminder({
+          id: `char-reminder-${data?.characterId || Date.now()}`,
+          title: notification.request.content.title || 'Companion Reminder',
+          body: notification.request.content.body || '',
+          characterId: (data?.characterId as string) || '',
+          characterName: (data?.characterName as string) || '',
+          timestamp: Date.now(),
+        }).then(() => {
+          refreshNotifications();
+        });
+      });
+
+      notifResponseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+        const data = response.notification.request.content.data;
+        if (data?.characterId) {
+          markNotificationAsRead(`char-reminder-${data.characterId}`).then(() => {
+            refreshNotifications();
+          });
+          router.push(`/chat/${data.characterId}`);
+        }
+      });
+    }
+
     return () => {
       subscription.remove();
+      if (notifReceivedSub) notifReceivedSub.remove();
+      if (notifResponseSub) notifResponseSub.remove();
     };
-  }, [favoriteCharacters, user]);
+  }, [favoriteCharacters, user, refreshNotifications, router]);
 
   const loadActivity = async () => {
     try {
@@ -572,13 +624,47 @@ export default function DiscoverScreen() {
       loadActivity();
       loadBehaviouralData();
       loadFavorites();
-    }, [loadFavorites])
+      refreshNotifications();
+    }, [loadFavorites, refreshNotifications])
   );
 
   const openCharacter = (id: string) => {
     triggerHaptic('light');
     router.push(`/character/${id}`);
   };
+
+  const [selectedLongPressChar, setSelectedLongPressChar] = useState<Character | null>(null);
+  const [isLongPressCharFav, setIsLongPressCharFav] = useState<boolean>(false);
+  const [isLongPressCharHidden, setIsLongPressCharHidden] = useState<boolean>(false);
+
+  const handleCharacterLongPress = useCallback(async (char: Character) => {
+    triggerHaptic('heavy');
+    const [fav, hidden] = await Promise.all([
+      isFavorite(char.id, user?.id),
+      isCharHiddenFromRecent(char.id, user?.id),
+    ]);
+    setIsLongPressCharFav(fav);
+    setIsLongPressCharHidden(hidden);
+    setSelectedLongPressChar(char);
+  }, [user?.id]);
+
+  const handleToggleFavFromModal = useCallback(async () => {
+    if (!selectedLongPressChar) return;
+    triggerHaptic('medium');
+    const newState = await toggleFavorite(selectedLongPressChar.id, user?.id, selectedLongPressChar);
+    setIsLongPressCharFav(newState);
+    await loadFavorites();
+    setSelectedLongPressChar(null);
+  }, [selectedLongPressChar, user?.id, loadFavorites]);
+
+  const handleToggleHideFromModal = useCallback(async () => {
+    if (!selectedLongPressChar) return;
+    triggerHaptic('medium');
+    const newState = await toggleHideFromRecent(selectedLongPressChar.id, user?.id);
+    setIsLongPressCharHidden(newState);
+    await Promise.all([loadActivity(), loadFavorites()]);
+    setSelectedLongPressChar(null);
+  }, [selectedLongPressChar, user?.id, loadActivity, loadFavorites]);
 
 
   // User's Workspace picks (from onboarding or profile)
@@ -1092,6 +1178,8 @@ export default function DiscoverScreen() {
           <View style={styles.netflixPortraitInner}>
             <Pressable
               onPress={() => router.push(`/chat/${item.id}`)}
+              onLongPress={() => handleCharacterLongPress(item)}
+              delayLongPress={350}
               style={({ pressed }) => [{ opacity: pressed ? 0.94 : 1 }]}
             >
               <DynamicCharacterImage
@@ -1146,13 +1234,15 @@ export default function DiscoverScreen() {
         </View>
       </View>
     );
-  }, [router, openCharacter, theme, isDark]);
+  }, [router, openCharacter, handleCharacterLongPress, theme, isDark]);
 
   const renderPanoramicItem = useCallback(({ item, index }: { item: Character; index: number }) => {
     const matchPercent = Math.max(88, 99 - index * 2);
     return (
       <Pressable
         onPress={() => openCharacter(item.id)}
+        onLongPress={() => handleCharacterLongPress(item)}
+        delayLongPress={350}
         style={({ pressed }) => [styles.panoramicCardPressable, pressed && { opacity: 0.9 }]}
       >
         <LiquidGlassView style={styles.panoramicCard} borderRadius={22} intensity={35} elevated>
@@ -1201,7 +1291,7 @@ export default function DiscoverScreen() {
         </LiquidGlassView>
       </Pressable>
     );
-  }, [openCharacter, theme]);
+  }, [openCharacter, handleCharacterLongPress, theme]);
 
   const renderExploreItem = useCallback(({ item: char }: { item: Character }) => {
     const accent = char.accent || '#0A84FF';
@@ -1212,6 +1302,8 @@ export default function DiscoverScreen() {
           triggerHaptic('light');
           router.push(`/chat/${char.id}`);
         }}
+        onLongPress={() => handleCharacterLongPress(char)}
+        delayLongPress={350}
       >
         <LiquidGlassView style={styles.exploreCard} borderRadius={20} intensity={30} elevated>
           <View style={styles.exploreCardImageWrap}>
@@ -1426,8 +1518,9 @@ export default function DiscoverScreen() {
                 <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={19} color={theme.text} />
               </Pressable>
               <Pressable
-                onPress={() => {
+                onPress={async () => {
                   triggerHaptic();
+                  await refreshNotifications();
                   setShowNotificationsModal(true);
                 }}
                 accessibilityLabel="Notifications"
@@ -1584,6 +1677,8 @@ export default function DiscoverScreen() {
                   <Pressable
                     key={`fav-${char.id}`}
                     onPress={() => openCharacter(char.id)}
+                    onLongPress={() => handleCharacterLongPress(char)}
+                    delayLongPress={350}
                     style={({ pressed }) => [styles.workspaceCardPressable, pressed && { opacity: 0.88 }]}
                   >
                     <LiquidGlassView style={styles.workspaceCard} borderRadius={22} intensity={32} elevated>
@@ -1664,6 +1759,8 @@ export default function DiscoverScreen() {
                   <Pressable
                     key={char.id}
                     onPress={() => openCharacter(char.id)}
+                    onLongPress={() => handleCharacterLongPress(char)}
+                    delayLongPress={350}
                     style={({ pressed }) => [styles.workspaceCardPressable, pressed && { opacity: 0.88 }]}
                   >
                     <LiquidGlassView style={styles.workspaceCard} borderRadius={22} intensity={32} elevated>
@@ -1748,6 +1845,8 @@ export default function DiscoverScreen() {
                     <Pressable
                       key={`activity-${char.id}`}
                       onPress={() => router.push(`/chat/${char.id}`)}
+                      onLongPress={() => handleCharacterLongPress(char)}
+                      delayLongPress={350}
                       style={({ pressed }) => [styles.activityCardPressable, pressed && { opacity: 0.88 }]}
                     >
                       <LiquidGlassView style={styles.activityCard} borderRadius={22} intensity={32} elevated>
@@ -2361,6 +2460,238 @@ export default function DiscoverScreen() {
         userName={user?.name || user?.username || 'there'}
       />
 
+      {/* Character Long Press Action Modal */}
+      <Modal
+        visible={!!selectedLongPressChar}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedLongPressChar(null)}
+      >
+        <Pressable
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.65)',
+            justifyContent: 'flex-end',
+            padding: 16,
+            paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+          }}
+          onPress={() => setSelectedLongPressChar(null)}
+        >
+          {selectedLongPressChar && (
+            <Pressable onPress={(e) => e.stopPropagation()}>
+              <LiquidGlassView
+                style={{
+                  padding: 18,
+                  borderRadius: 26,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  gap: 8,
+                }}
+                intensity={45}
+                elevated
+              >
+                {/* Header: Avatar, Name, Series */}
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                    paddingBottom: 12,
+                    borderBottomWidth: 1,
+                    borderBottomColor: theme.border,
+                  }}
+                >
+                  <DynamicCharacterImage
+                    character={selectedLongPressChar}
+                    style={{ width: 52, height: 52, borderRadius: 26 }}
+                    contentFit="cover"
+                    contentPosition="top"
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 17, fontWeight: '800', color: theme.text }} numberOfLines={1}>
+                      {selectedLongPressChar.name}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: theme.secondary, marginTop: 2 }} numberOfLines={1}>
+                      {selectedLongPressChar.role} · {selectedLongPressChar.series || 'Guild Universe'}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => setSelectedLongPressChar(null)}
+                    hitSlop={8}
+                    style={{ padding: 4 }}
+                  >
+                    <Ionicons name="close-circle" size={22} color={theme.secondary} />
+                  </Pressable>
+                </View>
+
+                {/* Option 1: Favorite / Unfavorite */}
+                <Pressable
+                  onPress={handleToggleFavFromModal}
+                  style={({ pressed }) => [
+                    {
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 12,
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      borderRadius: 14,
+                      backgroundColor: pressed ? theme.surfaceSecondary : 'transparent',
+                    },
+                  ]}
+                >
+                  <View
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 19,
+                      backgroundColor: isLongPressCharFav ? 'rgba(255,59,48,0.15)' : theme.surfaceSecondary,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons
+                      name={isLongPressCharFav ? 'heart-dislike' : 'heart'}
+                      size={18}
+                      color={isLongPressCharFav ? '#FF3B30' : theme.text}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: isLongPressCharFav ? '#FF3B30' : theme.text }}>
+                      {isLongPressCharFav ? 'Remove from Starred Guild' : 'Add to Starred Guild (Favorite)'}
+                    </Text>
+                    <Text style={{ fontSize: 11.5, color: theme.secondary, marginTop: 2 }}>
+                      {isLongPressCharFav ? 'Unpin from your priority favorites' : 'Pin to top of your Guild & activate reminders'}
+                    </Text>
+                  </View>
+                </Pressable>
+
+                {/* Option 2: Hide / Remove from Home & Recents */}
+                <Pressable
+                  onPress={handleToggleHideFromModal}
+                  style={({ pressed }) => [
+                    {
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 12,
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      borderRadius: 14,
+                      backgroundColor: pressed ? theme.surfaceSecondary : 'transparent',
+                    },
+                  ]}
+                >
+                  <View
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 19,
+                      backgroundColor: 'rgba(255,149,0,0.15)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons
+                      name={isLongPressCharHidden ? 'eye-outline' : 'eye-off-outline'}
+                      size={18}
+                      color="#FF9500"
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: theme.text }}>
+                      {isLongPressCharHidden ? 'Unhide Character' : 'Hide / Delete from Home & Recents'}
+                    </Text>
+                    <Text style={{ fontSize: 11.5, color: theme.secondary, marginTop: 2 }}>
+                      {isLongPressCharHidden ? 'Show on recent feeds again' : 'Hide from active feed without losing chat data'}
+                    </Text>
+                  </View>
+                </Pressable>
+
+                {/* Option 3: Chat Now */}
+                <Pressable
+                  onPress={() => {
+                    const cid = selectedLongPressChar.id;
+                    setSelectedLongPressChar(null);
+                    router.push(`/chat/${cid}`);
+                  }}
+                  style={({ pressed }) => [
+                    {
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 12,
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      borderRadius: 14,
+                      backgroundColor: pressed ? theme.surfaceSecondary : 'transparent',
+                    },
+                  ]}
+                >
+                  <View
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 19,
+                      backgroundColor: 'rgba(0,122,255,0.15)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="chatbubble-ellipses" size={18} color="#007AFF" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: theme.text }}>
+                      Open Chat
+                    </Text>
+                    <Text style={{ fontSize: 11.5, color: theme.secondary, marginTop: 2 }}>
+                      Immersive conversation and voice chat
+                    </Text>
+                  </View>
+                </Pressable>
+
+                {/* Option 4: View Lore Profile */}
+                <Pressable
+                  onPress={() => {
+                    const cid = selectedLongPressChar.id;
+                    setSelectedLongPressChar(null);
+                    router.push(`/character/${cid}`);
+                  }}
+                  style={({ pressed }) => [
+                    {
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 12,
+                      paddingVertical: 10,
+                      paddingHorizontal: 12,
+                      borderRadius: 14,
+                      backgroundColor: pressed ? theme.surfaceSecondary : 'transparent',
+                    },
+                  ]}
+                >
+                  <View
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 19,
+                      backgroundColor: theme.surfaceSecondary,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="person-circle-outline" size={18} color={theme.text} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: theme.text }}>
+                      Character Profile & Universe Lore
+                    </Text>
+                    <Text style={{ fontSize: 11.5, color: theme.secondary, marginTop: 2 }}>
+                      View background, voice, and traits
+                    </Text>
+                  </View>
+                </Pressable>
+              </LiquidGlassView>
+            </Pressable>
+          )}
+        </Pressable>
+      </Modal>
 
     </SafeAreaView>
   </View>

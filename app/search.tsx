@@ -47,6 +47,152 @@ interface RecentCharacterItem {
   avatarUrl: string;
 }
 
+export interface LiveInstantResult {
+  id: string;
+  name: string;
+  series?: string;
+  role: string;
+  avatarUrl?: string;
+  description?: string;
+  isBuiltin?: boolean;
+  builtinChar?: Character;
+}
+
+async function fetchLiveWikipediaEntities(q: string, signal?: AbortSignal): Promise<LiveInstantResult[]> {
+  const cleanQ = q.trim();
+  if (cleanQ.length < 2) return [];
+
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&generator=prefixsearch&gpssearch=${encodeURIComponent(
+      cleanQ
+    )}&gpslimit=8&prop=pageimages|description|extracts&piprop=thumbnail&pithumbsize=360&pilim=8&exintro=1&explaintext=1&exchars=140&format=json&origin=*`;
+
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'GuildTalkApp/1.0.3 (contact@guildtalk.app)' },
+      signal: signal || AbortSignal.timeout(3500),
+    });
+
+    if (!res.ok) return [];
+    const data = await res.json();
+    const pagesObj = data?.query?.pages;
+    if (!pagesObj) return [];
+
+    const pages: any[] = Object.values(pagesObj);
+    pages.sort((a, b) => (a.index || 99) - (b.index || 99));
+
+    const results: LiveInstantResult[] = [];
+    for (const page of pages) {
+      const title: string = page.title || '';
+      const desc: string = page.description || page.extract || '';
+      const lowerTitle = title.toLowerCase();
+      const lowerDesc = desc.toLowerCase();
+
+      // Filter out non-character / non-person Wikipedia articles
+      if (
+        lowerTitle.includes('(disambiguation)') ||
+        lowerTitle.startsWith('list of') ||
+        lowerTitle.includes('filmography') ||
+        lowerTitle.includes('discography') ||
+        lowerTitle.includes('soundtrack') ||
+        lowerTitle.includes('season ') ||
+        lowerTitle.includes('awards and') ||
+        lowerTitle.includes('episode ') ||
+        lowerTitle.includes('video game') ||
+        lowerDesc.includes('wikimedia') ||
+        lowerDesc.includes('disambiguation')
+      ) {
+        continue;
+      }
+
+      const match = title.match(/^(.*?)\s*\((.*?)\)$/);
+      const cleanName = match ? match[1].trim() : title;
+      const series = match ? match[2].trim() : desc ? desc.split('·')[0].trim() : 'Famous Universe';
+
+      results.push({
+        id: `wiki-${page.pageid || cleanName.toLowerCase().replace(/\s+/g, '-')}`,
+        name: cleanName,
+        series: series.charAt(0).toUpperCase() + series.slice(1),
+        role: desc ? desc.slice(0, 80) : 'Iconic Character',
+        avatarUrl: page.thumbnail?.source || '',
+        description: page.extract || desc || `Iconic figure ${cleanName}.`,
+      });
+
+      if (results.length >= 6) break;
+    }
+
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+async function fetchLiveAniListEntities(q: string, signal?: AbortSignal): Promise<LiveInstantResult[]> {
+  const cleanQ = q.trim();
+  if (cleanQ.length < 2) return [];
+
+  const query = `
+    query ($search: String) {
+      Page(page: 1, perPage: 4) {
+        characters(search: $search) {
+          id
+          name {
+            full
+            native
+          }
+          image {
+            large
+            medium
+          }
+          description
+          media(sort: POPULARITY_DESC, perPage: 1) {
+            nodes {
+              title {
+                english
+                romaji
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  try {
+    const res = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ query, variables: { search: cleanQ } }),
+      signal: signal || AbortSignal.timeout(3500),
+    });
+
+    if (!res.ok) return [];
+    const data = await res.json();
+    const chars = data?.data?.Page?.characters || [];
+
+    return chars.map((c: any) => {
+      const mediaTitle = c.media?.nodes?.[0]?.title?.english || c.media?.nodes?.[0]?.title?.romaji || 'Anime';
+      const cleanDesc = (c.description || '')
+        .replace(/~!.+?!~/g, '')
+        .replace(/<[^>]*>/g, '')
+        .trim();
+
+      return {
+        id: `anilist-${c.id}`,
+        name: c.name?.full || cleanQ,
+        series: mediaTitle,
+        role: `Anime Character · ${mediaTitle}`,
+        avatarUrl: c.image?.large || c.image?.medium || '',
+        description: cleanDesc.slice(0, 160) || `Anime hero ${c.name?.full || cleanQ}.`,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
 const TRENDING = [
   { query: 'Gojo Satoru', icon: '⚡' },
   { query: 'Batman', icon: '🦇' },
@@ -247,7 +393,8 @@ export default function SearchScreen() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState<CharacterCandidate[]>([]);
-  const [localResults, setLocalResults] = useState<Character[]>([]);
+  const [liveResults, setLiveResults] = useState<LiveInstantResult[]>([]);
+  const [isLiveLoading, setIsLiveLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -327,20 +474,24 @@ export default function SearchScreen() {
     return () => clearTimeout(timer);
   }, [query]);
 
-  // Instant filter on local characters while typing
+  // Instant live search while typing (0ms local characters + 160ms Wikipedia & Knowledge Graph entities)
   useEffect(() => {
-    if (query.trim().length < 1) {
-      setLocalResults([]);
+    const q = query.trim();
+    if (q.length < 1) {
+      setLiveResults([]);
+      setIsLiveLoading(false);
       return;
     }
-    const q = query.toLowerCase();
+
+    // 1. FAST LOCAL MATCHES (0ms instant)
+    const qLower = q.toLowerCase();
     const allChars = getAllBuiltinCharacters();
-    const matches = allChars
+    const localMatches: LiveInstantResult[] = allChars
       .filter((c) => {
         const matchesQuery =
-          c.name.toLowerCase().includes(q) ||
-          (c.series && c.series.toLowerCase().includes(q)) ||
-          c.role.toLowerCase().includes(q);
+          c.name.toLowerCase().includes(qLower) ||
+          (c.series && c.series.toLowerCase().includes(qLower)) ||
+          c.role.toLowerCase().includes(qLower);
 
         if (!matchesQuery) return false;
         if (selectedCategory === 'all') return true;
@@ -371,9 +522,77 @@ export default function SearchScreen() {
         }
         return true;
       })
-      .slice(0, 8);
+      .slice(0, 8)
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        series: c.series,
+        role: c.role,
+        avatarUrl: c.avatarUrl,
+        description: c.description,
+        isBuiltin: true,
+        builtinChar: c,
+      }));
 
-    setLocalResults(matches);
+    setLiveResults(localMatches);
+
+    // 2. LIVE WIKIPEDIA & ANILIST REAL-TIME MATCHES (160ms debounced)
+    const abortController = new AbortController();
+    setIsLiveLoading(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const isAnime = selectedCategory === 'anime';
+        const [wikiRes, aniRes] = await Promise.allSettled([
+          fetchLiveWikipediaEntities(q, abortController.signal),
+          fetchLiveAniListEntities(q, abortController.signal),
+        ]);
+
+        const wikiEntities = wikiRes.status === 'fulfilled' ? wikiRes.value : [];
+        const aniEntities = aniRes.status === 'fulfilled' ? aniRes.value : [];
+
+        setLiveResults((prev) => {
+          const map = new Map<string, LiveInstantResult>();
+          // Put local matches first
+          prev.forEach((item) => map.set(item.name.toLowerCase(), item));
+
+          // If in anime tab or anime query, prioritize AniList studio art
+          if (isAnime) {
+            aniEntities.forEach((entity) => {
+              if (!map.has(entity.name.toLowerCase())) {
+                map.set(entity.name.toLowerCase(), entity);
+              }
+            });
+            wikiEntities.forEach((entity) => {
+              if (!map.has(entity.name.toLowerCase())) {
+                map.set(entity.name.toLowerCase(), entity);
+              }
+            });
+          } else {
+            wikiEntities.forEach((entity) => {
+              if (!map.has(entity.name.toLowerCase())) {
+                map.set(entity.name.toLowerCase(), entity);
+              }
+            });
+            aniEntities.forEach((entity) => {
+              if (!map.has(entity.name.toLowerCase())) {
+                map.set(entity.name.toLowerCase(), entity);
+              }
+            });
+          }
+          return Array.from(map.values()).slice(0, 10);
+        });
+      } catch {
+        // ignore
+      } finally {
+        setIsLiveLoading(false);
+      }
+    }, 160);
+
+    return () => {
+      clearTimeout(timer);
+      abortController.abort();
+    };
   }, [query, selectedCategory]);
 
   const openCharacter = (char: { id: string; name: string; series?: string; role: string; avatarUrl: string }) => {
@@ -465,6 +684,10 @@ export default function SearchScreen() {
     const allChars = getAllBuiltinCharacters();
     const existing = allChars.find((c) => c.name.toLowerCase() === cand.name.toLowerCase());
     if (existing) {
+      if (cand.avatarUrl && cand.avatarUrl !== existing.avatarUrl) {
+        existing.avatarUrl = cand.avatarUrl;
+        existing.coverUrl = cand.coverUrl || cand.avatarUrl;
+      }
       openCharacter(existing);
       return;
     }
@@ -499,6 +722,32 @@ export default function SearchScreen() {
     router.back();
     setTimeout(() => router.push(`/chat/${charId}`), 50);
     saveCustomCharacter(newChar, token).catch(() => {});
+  };
+
+  const handleSelectLiveResult = (item: LiveInstantResult) => {
+    if (item.builtinChar) {
+      openCharacter(item.builtinChar);
+      return;
+    }
+
+    const allChars = getAllBuiltinCharacters();
+    const existing = allChars.find((c) => c.name.toLowerCase() === item.name.toLowerCase());
+    if (existing) {
+      openCharacter(existing);
+      return;
+    }
+
+    selectCandidate({
+      name: item.name,
+      series: item.series || 'Famous Universe',
+      role: item.role || 'Iconic Figure',
+      shortDescription: item.description?.slice(0, 100) || item.role,
+      description: item.description || `Iconic character ${item.name}. Ready to talk with authentic voice and lore.`,
+      personality: ['Charismatic', 'Sharp', 'Authentic'],
+      greeting: `Hello! I am ${item.name}. What shall we talk about today?`,
+      avatarUrl: item.avatarUrl || '',
+      coverUrl: item.avatarUrl || '',
+    });
   };
 
   const shimmerOpacity = shimmerAnim.interpolate({
@@ -548,7 +797,7 @@ export default function SearchScreen() {
                   setQuery('');
                   setSearched(false);
                   setResults([]);
-                  setLocalResults([]);
+                  setLiveResults([]);
                   inputRef.current?.focus();
                 }}
                 hitSlop={10}
@@ -652,36 +901,59 @@ export default function SearchScreen() {
         )}
 
         {/* ============================================================ */}
-        {/* 1. TYPING STATE: LIVE INSTANT MATCHES                        */}
+        {/* 1. TYPING STATE: LIVE INSTANT MATCHES (GOOGLE OMNIBOX STYLE) */}
         {/* ============================================================ */}
-        {showTyping && localResults.length > 0 && (
+        {showTyping && liveResults.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionRow}>
               <Text style={[styles.sectionLabel, { color: theme.secondary }]}>INSTANT MATCHES</Text>
               <Text style={[styles.resultCount, { color: theme.muted }]}>
-                {localResults.length} instant
+                {isLiveLoading ? 'Searching live…' : `${liveResults.length} found`}
               </Text>
             </View>
 
-            {localResults.map((c) => (
+            {liveResults.map((item) => (
               <Pressable
-                key={c.id}
-                onPress={() => openCharacter(c)}
+                key={item.id}
+                onPress={() => handleSelectLiveResult(item)}
                 style={({ pressed }) => [styles.rowItem, pressed && { opacity: 0.72 }]}
               >
                 <LiquidGlassView style={styles.rowGlass} borderRadius={18} intensity={25}>
-                  <DynamicCharacterImage
-                    character={c}
-                    style={styles.rowAvatar}
-                    contentFit="cover"
-                    contentPosition="top"
-                  />
+                  {item.builtinChar ? (
+                    <DynamicCharacterImage
+                      character={item.builtinChar}
+                      style={styles.rowAvatar}
+                      contentFit="cover"
+                      contentPosition="top"
+                    />
+                  ) : item.avatarUrl ? (
+                    <Image
+                      source={{ uri: item.avatarUrl }}
+                      style={styles.rowAvatar}
+                      contentFit="cover"
+                      contentPosition="top"
+                      transition={200}
+                    />
+                  ) : (
+                    <View
+                      style={[
+                        styles.rowAvatar,
+                        {
+                          backgroundColor: theme.surfaceSolid,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        },
+                      ]}
+                    >
+                      <Ionicons name="person" size={20} color={theme.secondary} />
+                    </View>
+                  )}
                   <View style={styles.rowInfo}>
                     <Text style={[styles.rowName, { color: theme.text }]} numberOfLines={1}>
-                      {c.name}
+                      {item.name}
                     </Text>
                     <Text style={[styles.rowSub, { color: theme.secondary }]} numberOfLines={1}>
-                      {c.series ? `${c.series} · ${c.role}` : c.role}
+                      {item.series ? `${item.series} · ${item.role}` : item.role}
                     </Text>
                   </View>
                   <View style={[styles.rowPill, { backgroundColor: theme.text }]}>
@@ -709,10 +981,10 @@ export default function SearchScreen() {
               </View>
               <View style={styles.rowInfo}>
                 <Text style={[styles.rowName, { color: theme.text }]}>
-                  Search "{query}" with AI
+                  Explore all universe lore & versions for "{query}"
                 </Text>
                 <Text style={[styles.rowSub, { color: theme.secondary }]}>
-                  Discover from any anime, cinema, or book worldwide
+                  Generate 6-8 alternate adaptations, eras & comic versions
                 </Text>
               </View>
               <Ionicons name="arrow-forward-circle" size={24} color={theme.secondary} />
@@ -720,19 +992,23 @@ export default function SearchScreen() {
           </View>
         )}
 
-        {/* Typing state: No local match -> Big prominent AI action card */}
-        {showTyping && localResults.length === 0 && (
+        {/* Typing state: No match yet -> Big prominent AI action card */}
+        {showTyping && liveResults.length === 0 && (
           <Pressable
             onPress={() => performSearch(query)}
             style={({ pressed }) => [styles.bigSearchBtn, { opacity: pressed ? 0.85 : 1 }]}
           >
             <LiquidGlassView style={styles.bigSearchInner} borderRadius={22} intensity={35} elevated>
               <View style={[styles.bigSearchIconWrap, { backgroundColor: theme.text }]}>
-                <Ionicons name="sparkles" size={22} color={theme.background} />
+                {isLiveLoading ? (
+                  <ActivityIndicator size="small" color={theme.background} />
+                ) : (
+                  <Ionicons name="sparkles" size={22} color={theme.background} />
+                )}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.bigSearchTitle, { color: theme.text }]}>
-                  Find "{query}" with AI
+                  {isLiveLoading ? `Finding "${query}"…` : `Find "${query}" with AI`}
                 </Text>
                 <Text style={[styles.bigSearchSub, { color: theme.secondary }]}>
                   Instantly craft persona, avatar & authentic voice
