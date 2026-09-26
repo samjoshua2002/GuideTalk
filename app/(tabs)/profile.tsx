@@ -23,6 +23,7 @@ import { LiquidGlassView } from '@/src/components/LiquidGlassView';
 import { GlowButton } from '@/src/components/GlowButton';
 import { AuthModal } from '@/src/components/AuthModal';
 import { getHapticsEnabled, setHapticsEnabled, triggerHaptic } from '@/src/lib/haptics';
+import { getEffectiveAppVersion, getEffectiveVersionCode, isRunningOtaUpdate } from '@/src/lib/version';
 import { fetchAppVersion, AppVersionInfo } from '@/src/lib/chatApi';
 
 export default function ProfileScreen() {
@@ -48,8 +49,8 @@ export default function ProfileScreen() {
   const spinAnim = useRef(new Animated.Value(0)).current;
   const spinLoopRef = useRef<any>(null);
 
-  const currentVer = Constants.expoConfig?.version || '1.0.0';
-  const currentCode = (Constants.expoConfig as any)?.android?.versionCode || 1;
+  const currentVer = getEffectiveAppVersion();
+  const currentCode = getEffectiveVersionCode();
 
   const handleToggleHaptics = async () => {
     const next = !hapticsOn;
@@ -161,16 +162,40 @@ export default function ProfileScreen() {
     // If an OTA update is available from Expo Updates, fetch and reload
     if (otaUpdateAvailable && Updates.isEnabled) {
       setIsDownloading(true);
+      let curP = 0.08;
+      setDownloadProgress(curP);
+      progressAnim.setValue(curP);
+
+      const otaTimer = setInterval(() => {
+        curP = Math.min(curP + 0.14, 0.92);
+        setDownloadProgress(curP);
+        Animated.timing(progressAnim, {
+          toValue: curP,
+          duration: 250,
+          useNativeDriver: false,
+        }).start();
+      }, 300);
+
       try {
         await Updates.fetchUpdateAsync();
+        clearInterval(otaTimer);
+
+        setDownloadProgress(1);
+        Animated.timing(progressAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: false,
+        }).start();
+
         setDownloadDone(true);
         setDownloadError(null);
         triggerHaptic('success');
         setTimeout(async () => {
           await Updates.reloadAsync();
-        }, 1200);
+        }, 1000);
         return;
       } catch (e: any) {
+        clearInterval(otaTimer);
         setDownloadDone(false);
         setDownloadError(e?.message || 'OTA update failed to apply.');
         triggerHaptic('light');
@@ -334,7 +359,7 @@ export default function ProfileScreen() {
             <View style={{ flex: 1 }}>
               <Text style={[styles.settingLabel, { color: theme.text }]}>Guide Talk</Text>
               <Text style={[styles.settingSub, { color: theme.secondary }]}>
-                Version {currentVer} (build {currentCode})
+                Version {currentVer} (build {currentCode}){isRunningOtaUpdate() ? ' • Live OTA' : ''}
               </Text>
             </View>
             {/* Check for updates button with spin icon */}

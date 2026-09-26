@@ -2496,16 +2496,16 @@ const server = http.createServer(async (request, response) => {
     // ----------------------------------------------------------------------
     if (request.method === 'GET' && pathname === '/app/version') {
       return sendJson(response, 200, {
-        latestVersion: process.env.APP_LATEST_VERSION || '1.0.5',
-        latestVersionCode: Number(process.env.APP_LATEST_VERSION_CODE || 6),
+        latestVersion: process.env.APP_LATEST_VERSION || '1.0.6',
+        latestVersionCode: Number(process.env.APP_LATEST_VERSION_CODE || 7),
         apkUrl: process.env.APP_APK_URL || 'https://expo.dev/accounts/samjoshua2002/projects/guildtalk/builds',
         title: 'New GuideTalk Update Available! 🚀',
-        message: 'GuideTalk v1.0.5 brings verified authentic character looks, instant series protagonist resolution, reactive feed hiding, and high-performance system notifications.',
+        message: 'GuideTalk v1.0.6 brings smooth live OTA progress tracking, instant companion look stability, and proactive feed sync.',
         releaseNotes: [
+          'Smooth Live OTA Progress: Visual progress tracking for instant over-the-air updates without full APK downloads',
           'Authentic Character Looks: Verified portraits only with zero dummy or random image padding',
           'Series Protagonist Resolution: Instant lead recognition (Patrick Jane for The Mentalist, Walter White, etc.)',
           'Dynamic Home & Activity Sync: Instant hide/delete without screen desync or avatar flashing',
-          'Discover New Features Modal: Full-screen update showcase with session-only skip behavior',
           'System Notification Permission: Android status bar and lockscreen push notifications directly on app launch',
         ],
         forceUpdate: false,

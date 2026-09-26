@@ -68,6 +68,7 @@ import {
   resolveProphecyForCharacter,
   fetchDynamicServerProphecy,
 } from '@/src/lib/prophecyService';
+import { getEffectiveAppVersion, getEffectiveVersionCode } from '@/src/lib/version';
 
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -322,8 +323,8 @@ export default function DiscoverScreen() {
     if (!hasDismissedVersionModalThisSession) {
       (async () => {
         try {
-          const currentVer = Constants.expoConfig?.version || '1.0.4';
-          const currentCode = (Constants.expoConfig?.android?.versionCode as number) || 5;
+          const currentVer = getEffectiveAppVersion();
+          const currentCode = getEffectiveVersionCode();
 
           const info = await fetchAppVersion();
           if (info && (info.latestVersionCode > currentCode || info.latestVersion !== currentVer)) {

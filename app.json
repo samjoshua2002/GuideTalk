@@ -2,7 +2,7 @@
   "expo": {
     "name": "GuideTalk",
     "slug": "guildtalk",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "orientation": "portrait",
     "scheme": "guidetalk",
     "icon": "./assets/images/icon.png",
@@ -30,7 +30,7 @@
         "backgroundColor": "#F4CD2A"
       },
       "package": "com.samjoshua2002.guidetalk",
-      "versionCode": 6,
+      "versionCode": 7,
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
         "POST_NOTIFICATIONS",
@@ -47,9 +47,7 @@
         "projectId": "05720c5e-6279-4d8d-b20a-45c2114a9dc8"
       }
     },
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
+    "runtimeVersion": "1.0.5",
     "updates": {
       "url": "https://u.expo.dev/05720c5e-6279-4d8d-b20a-45c2114a9dc8"
     }

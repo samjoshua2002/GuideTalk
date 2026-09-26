@@ -90,15 +90,39 @@ export function NewVersionModal({
 
     // 1. Expo OTA update
     if (otaUpdateAvailable && Updates.isEnabled) {
+      let currentP = 0.08;
+      setDownloadProgress(currentP);
+      progressAnim.setValue(currentP);
+
+      const otaProgressInterval = setInterval(() => {
+        currentP = Math.min(currentP + 0.12, 0.92);
+        setDownloadProgress(currentP);
+        Animated.timing(progressAnim, {
+          toValue: currentP,
+          duration: 250,
+          useNativeDriver: false,
+        }).start();
+      }, 300);
+
       try {
         await Updates.fetchUpdateAsync();
+        clearInterval(otaProgressInterval);
+
+        setDownloadProgress(1);
+        Animated.timing(progressAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: false,
+        }).start();
+
         setDownloadDone(true);
         triggerHaptic('success');
         setTimeout(async () => {
           await Updates.reloadAsync();
-        }, 1200);
+        }, 1000);
         return;
       } catch (err: any) {
+        clearInterval(otaProgressInterval);
         setDownloadError(err?.message || 'OTA update failed to apply.');
         setIsDownloading(false);
         return;
