@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, ActivityIndicator, View } from 'react-native';
+import { Pressable, StyleSheet, Text, ActivityIndicator, View, StyleProp, ViewStyle } from 'react-native';
 import { useTheme } from '@/src/context/ThemeContext';
 import { triggerHaptic } from '@/src/lib/haptics';
 
@@ -10,6 +10,7 @@ interface GlowButtonProps {
   variant?: 'primary' | 'secondary' | 'glass';
   disabled?: boolean;
   icon?: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
 }
 
 export function GlowButton({
@@ -19,6 +20,7 @@ export function GlowButton({
   variant = 'primary',
   disabled = false,
   icon,
+  style,
 }: GlowButtonProps) {
   const { theme, isDark } = useTheme();
 
@@ -51,6 +53,7 @@ export function GlowButton({
           borderColor: variant === 'glass' ? theme.borderActive : theme.border,
           borderWidth: variant === 'primary' ? 0 : 1,
         },
+        style,
         pressed && styles.pressed,
       ]}
     >

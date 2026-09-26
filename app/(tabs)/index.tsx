@@ -27,11 +27,13 @@ import { getAllBuiltinCharacters, registerCustomCharacter } from '@/src/data/cha
 import Constants from 'expo-constants';
 import { getAllPresets, CATEGORY_PRESETS, UniverseCategory, RivalRelation, getRivalsForWorkspace } from '@/src/data/rivals';
 import { Character } from '@/src/types/character';
-import { fetchCharacters, listConversations, ConversationSummary, fetchRecommendations, fetchDynamicRivals } from '@/src/lib/chatApi';
+import { fetchCharacters, listConversations, ConversationSummary, fetchRecommendations, fetchDynamicRivals, fetchAppVersion, AppVersionInfo } from '@/src/lib/chatApi';
 import { LiquidGlassView } from '@/src/components/LiquidGlassView';
 import { GlowButton } from '@/src/components/GlowButton';
 import { AuthModal } from '@/src/components/AuthModal';
 import { NotificationsModal } from '@/src/components/NotificationsModal';
+import { NewVersionModal } from '@/src/components/NewVersionModal';
+import * as Updates from 'expo-updates';
 
 import * as Notifications from 'expo-notifications';
 import { OnboardingStoryboard } from '@/src/components/OnboardingStoryboard';
@@ -45,6 +47,7 @@ import {
   dismissNotification,
   clearAllNotifications,
   savePersistedReminder,
+  requestNotificationPermission,
   InAppNotification,
 } from '@/src/lib/notificationService';
 import {
@@ -58,7 +61,7 @@ import {
   isCharHiddenFromRecent,
 } from '@/src/lib/favorites';
 import { getInteractedCharacterIds } from '@/src/lib/activityTracker';
-import { DynamicCharacterImage } from '@/src/lib/dynamicImageService';
+import { DynamicCharacterImage, getResolvedCharacterImage } from '@/src/lib/dynamicImageService';
 import {
   getDailySeed,
   formatTodayProphecyDate,
@@ -239,6 +242,8 @@ function getDynamicFallbackImage(character?: Character | null): string {
   return FALLBACK_ANIME_COLLECTION[hash % FALLBACK_ANIME_COLLECTION.length];
 }
 
+let hasDismissedVersionModalThisSession = false;
+
 export default function DiscoverScreen() {
   const router = useRouter();
   const { theme, isDark, toggleTheme } = useTheme();
@@ -266,6 +271,12 @@ export default function DiscoverScreen() {
   const [dynamicRivals, setDynamicRivals] = useState<RivalRelation[]>([]);
   const [isFetchingRivals, setIsFetchingRivals] = useState(false);
 
+  // New version discovery modal & hidden characters
+  const [updateModalVisible, setUpdateModalVisible] = useState(false);
+  const [availableUpdate, setAvailableUpdate] = useState<AppVersionInfo | null>(null);
+  const [otaAvailable, setOtaAvailable] = useState(false);
+  const [hiddenIds, setHiddenIds] = useState<string[]>([]);
+
   // ----------------------------------------------------------------------
   // YOUR ACTIVITY: PAST CARDS TALKED WITH & FAVORITES
   // ----------------------------------------------------------------------
@@ -277,11 +288,21 @@ export default function DiscoverScreen() {
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [notificationsList, setNotificationsList] = useState<InAppNotification[]>([]);
 
-
   const loadFavorites = useCallback(async () => {
     try {
-      const favs = await loadAllFavoriteCharacters(user?.id, characterList);
+      let deviceId = 'guest';
+      if (Platform.OS === 'web') {
+        deviceId = globalThis.localStorage?.getItem(DEVICE_STORAGE_KEY) || 'web-guest';
+      } else {
+        deviceId = (await SecureStore.getItemAsync(DEVICE_STORAGE_KEY)) || 'device-guest';
+      }
+      const activeUserId = user?.id || deviceId;
+      const [favs, currentHidden] = await Promise.all([
+        loadAllFavoriteCharacters(activeUserId, characterList),
+        getHiddenRecentIds(activeUserId),
+      ]);
       setFavoriteCharacters(favs);
+      setHiddenIds(currentHidden);
     } catch {
       setFavoriteCharacters([]);
     }
@@ -293,6 +314,48 @@ export default function DiscoverScreen() {
     const notifs = await getInAppNotifications(likedChars, currentName);
     setNotificationsList(notifs);
   }, [favoriteCharacters, user?.name, user?.username]);
+
+  // App launch checks: request system notification permissions & check new version
+  useEffect(() => {
+    requestNotificationPermission().catch(() => {});
+
+    if (!hasDismissedVersionModalThisSession) {
+      (async () => {
+        try {
+          const currentVer = Constants.expoConfig?.version || '1.0.4';
+          const currentCode = (Constants.expoConfig?.android?.versionCode as number) || 5;
+
+          const info = await fetchAppVersion();
+          if (info && (info.latestVersionCode > currentCode || info.latestVersion !== currentVer)) {
+            setAvailableUpdate(info);
+            setUpdateModalVisible(true);
+            return;
+          }
+
+          if (Updates.isEnabled && Platform.OS !== 'web') {
+            const check = await Updates.checkForUpdateAsync();
+            if (check.isAvailable) {
+              setOtaAvailable(true);
+              setAvailableUpdate({
+                latestVersion: currentVer,
+                latestVersionCode: currentCode + 1,
+                apkUrl: '',
+                title: 'New Update Available',
+                message: 'A fresh update is ready to download and install.',
+                releaseNotes: [
+                  'AniList & Wikipedia live portrait engine improvements',
+                  'Instant companion look switcher & outfit previews',
+                  'System status bar notifications when outside the app',
+                ],
+                forceUpdate: false,
+              });
+              setUpdateModalVisible(true);
+            }
+          }
+        } catch {}
+      })();
+    }
+  }, []);
 
   useEffect(() => {
     // STRICT: Only send companion reminders for characters the user explicitly liked/favorited!
@@ -366,15 +429,17 @@ export default function DiscoverScreen() {
         deviceId = (await SecureStore.getItemAsync(DEVICE_STORAGE_KEY)) || 'device-guest';
       }
       const activeUserId = user?.id || deviceId;
-      const [convs, hiddenIds] = await Promise.all([
+      const [convs, fetchedHiddenIds] = await Promise.all([
         listConversations(activeUserId, token),
-        getHiddenRecentIds(user?.id),
+        getHiddenRecentIds(activeUserId),
       ]);
+      setHiddenIds(fetchedHiddenIds);
+
       if (Array.isArray(convs) && convs.length > 0) {
         const presets = getAllPresets();
         const map = new Map<string, ConversationSummary>();
         for (const c of convs) {
-          if (!c.characterId || hiddenIds.includes(c.characterId)) continue;
+          if (!c.characterId || fetchedHiddenIds.includes(c.characterId)) continue;
           if (!map.has(c.characterId)) {
             map.set(c.characterId, c);
           } else {
@@ -389,18 +454,23 @@ export default function DiscoverScreen() {
         );
         const mapped = sorted
           .map((item) => {
+            const resolvedImg = getResolvedCharacterImage(item.characterName);
+            const rawAvatar =
+              item.characterAvatar &&
+              !item.characterAvatar.includes('dicebear.com') &&
+              !item.characterAvatar.includes('unsplash.com')
+                ? item.characterAvatar
+                : null;
+            const validImg = rawAvatar || resolvedImg || '';
+
             const char =
               characterList.find((c) => c.id === item.characterId) ||
               presets.find((c) => c.id === item.characterId) ||
               ({
                 id: item.characterId,
                 name: item.characterName,
-                avatarUrl:
-                  item.characterAvatar ||
-                  `https://api.dicebear.com/9.x/adventurer/png?seed=${encodeURIComponent(item.characterName)}&backgroundColor=000000`,
-                coverUrl:
-                  item.characterAvatar ||
-                  `https://api.dicebear.com/9.x/adventurer/png?seed=${encodeURIComponent(item.characterName)}&backgroundColor=000000`,
+                avatarUrl: validImg,
+                coverUrl: validImg,
                 role: 'Companion',
                 series: 'Universe',
                 category: 'cinema',
@@ -416,7 +486,12 @@ export default function DiscoverScreen() {
               updatedAt: item.updatedAt,
             };
           })
-          .filter(Boolean);
+          .filter(
+            (item) =>
+              item &&
+              !fetchedHiddenIds.includes(item.character.id) &&
+              !fetchedHiddenIds.includes(item.character.name.toLowerCase())
+          );
         setActivityList(mapped);
       } else {
         setActivityList([]);
@@ -639,9 +714,16 @@ export default function DiscoverScreen() {
 
   const handleCharacterLongPress = useCallback(async (char: Character) => {
     triggerHaptic('heavy');
+    let deviceId = 'guest';
+    if (Platform.OS === 'web') {
+      deviceId = globalThis.localStorage?.getItem(DEVICE_STORAGE_KEY) || 'web-guest';
+    } else {
+      deviceId = (await SecureStore.getItemAsync(DEVICE_STORAGE_KEY)) || 'device-guest';
+    }
+    const activeUserId = user?.id || deviceId;
     const [fav, hidden] = await Promise.all([
-      isFavorite(char.id, user?.id),
-      isCharHiddenFromRecent(char.id, user?.id),
+      isFavorite(char.id, activeUserId),
+      isCharHiddenFromRecent(char.id, activeUserId),
     ]);
     setIsLongPressCharFav(fav);
     setIsLongPressCharHidden(hidden);
@@ -651,7 +733,14 @@ export default function DiscoverScreen() {
   const handleToggleFavFromModal = useCallback(async () => {
     if (!selectedLongPressChar) return;
     triggerHaptic('medium');
-    const newState = await toggleFavorite(selectedLongPressChar.id, user?.id, selectedLongPressChar);
+    let deviceId = 'guest';
+    if (Platform.OS === 'web') {
+      deviceId = globalThis.localStorage?.getItem(DEVICE_STORAGE_KEY) || 'web-guest';
+    } else {
+      deviceId = (await SecureStore.getItemAsync(DEVICE_STORAGE_KEY)) || 'device-guest';
+    }
+    const activeUserId = user?.id || deviceId;
+    const newState = await toggleFavorite(selectedLongPressChar.id, activeUserId, selectedLongPressChar);
     setIsLongPressCharFav(newState);
     await loadFavorites();
     setSelectedLongPressChar(null);
@@ -660,8 +749,17 @@ export default function DiscoverScreen() {
   const handleToggleHideFromModal = useCallback(async () => {
     if (!selectedLongPressChar) return;
     triggerHaptic('medium');
-    const newState = await toggleHideFromRecent(selectedLongPressChar.id, user?.id);
+    let deviceId = 'guest';
+    if (Platform.OS === 'web') {
+      deviceId = globalThis.localStorage?.getItem(DEVICE_STORAGE_KEY) || 'web-guest';
+    } else {
+      deviceId = (await SecureStore.getItemAsync(DEVICE_STORAGE_KEY)) || 'device-guest';
+    }
+    const activeUserId = user?.id || deviceId;
+    const newState = await toggleHideFromRecent(selectedLongPressChar.id, activeUserId);
     setIsLongPressCharHidden(newState);
+    const updatedHidden = await getHiddenRecentIds(activeUserId);
+    setHiddenIds(updatedHidden);
     await Promise.all([loadActivity(), loadFavorites()]);
     setSelectedLongPressChar(null);
   }, [selectedLongPressChar, user?.id, loadActivity, loadFavorites]);
@@ -686,38 +784,43 @@ export default function DiscoverScreen() {
     const allChars = [...characterList, ...presets.filter((p) => !characterList.some((c) => c.id === p.id))];
     const map = new Map<string, Character>();
 
+    const isHidden = (id: string, name?: string) =>
+      hiddenIds.includes(id) || (!!name && hiddenIds.includes(name.toLowerCase()));
+
     // 1. Dynamic user interests: characters the user recently searched, viewed or interacted with (e.g. Arlecchino!)
     (recentlyViewedIds || []).forEach((id) => {
+      if (isHidden(id)) return;
       const char = allChars.find((c) => c.id === id || c.name.toLowerCase() === id.toLowerCase());
-      if (char) map.set(char.id, char);
+      if (char && !isHidden(char.id, char.name)) map.set(char.id, char);
     });
 
     (activityList || []).forEach((act) => {
       const charId = act?.character?.id;
-      if (charId) {
+      if (charId && !isHidden(charId, act.character?.name)) {
         const char = allChars.find((c) => c.id === charId) || act.character;
-        if (char && !map.has(char.id)) map.set(char.id, char as Character);
+        if (char && !isHidden(char.id, char.name) && !map.has(char.id)) map.set(char.id, char as Character);
       }
     });
 
     // 2. Explicit user favorites
     (favoriteCharacters || []).forEach((fav) => {
-      if (fav && !map.has(fav.id)) map.set(fav.id, fav);
+      if (fav && !isHidden(fav.id, fav.name) && !map.has(fav.id)) map.set(fav.id, fav);
     });
 
     // 3. User's onboarding workspace picks
     workspaceIds.forEach((id) => {
+      if (isHidden(id)) return;
       const char = allChars.find((c) => c.id === id);
-      if (char && !map.has(char.id)) map.set(char.id, char);
+      if (char && !isHidden(char.id, char.name) && !map.has(char.id)) map.set(char.id, char);
     });
 
     // 4. Default fallback if empty
     if (map.size === 0) {
-      presets.slice(0, 3).forEach((c) => map.set(c.id, c));
+      presets.filter((c) => !isHidden(c.id, c.name)).slice(0, 3).forEach((c) => map.set(c.id, c));
     }
 
-    return Array.from(map.values());
-  }, [workspaceIds, characterList, recentlyViewedIds, activityList, favoriteCharacters]);
+    return Array.from(map.values()).filter((c) => !isHidden(c.id, c.name));
+  }, [workspaceIds, characterList, recentlyViewedIds, activityList, favoriteCharacters, hiddenIds]);
 
   // Determine user's preferred category (e.g. Hollywood, Marvel, Anime, Gaming, Bollywood)
   const userCategory = useMemo<UniverseCategory>(() => {
@@ -2458,6 +2561,17 @@ export default function DiscoverScreen() {
           );
         }}
         userName={user?.name || user?.username || 'there'}
+      />
+
+      {/* Discover New Features & Version Update Full-Screen Modal */}
+      <NewVersionModal
+        visible={updateModalVisible}
+        updateInfo={availableUpdate}
+        otaUpdateAvailable={otaAvailable}
+        onDismiss={() => {
+          hasDismissedVersionModalThisSession = true;
+          setUpdateModalVisible(false);
+        }}
       />
 
       {/* Character Long Press Action Modal */}

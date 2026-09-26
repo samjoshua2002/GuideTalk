@@ -58,17 +58,72 @@ export interface LiveInstantResult {
   builtinChar?: Character;
 }
 
+const SHOW_PROTAGONIST_MAP: Record<
+  string,
+  { name: string; series: string; role: string; description: string; avatarUrl?: string }
+> = {
+  'the mentalist': {
+    name: 'Patrick Jane',
+    series: 'The Mentalist',
+    role: 'CBI Independent Consultant & Master Mentalist',
+    description:
+      'A former celebrity psychic medium who uses keen observation, psychological manipulation, and razor-sharp deduction to assist the California Bureau of Investigation.',
+    avatarUrl: 'https://upload.wikimedia.org/wikipedia/en/b/b3/Patrick_Jane.jpg',
+  },
+  'mentalist': {
+    name: 'Patrick Jane',
+    series: 'The Mentalist',
+    role: 'CBI Independent Consultant & Master Mentalist',
+    description:
+      'A former celebrity psychic medium who uses keen observation, psychological manipulation, and razor-sharp deduction to assist the California Bureau of Investigation.',
+    avatarUrl: 'https://upload.wikimedia.org/wikipedia/en/b/b3/Patrick_Jane.jpg',
+  },
+  'breaking bad': {
+    name: 'Walter White (Heisenberg)',
+    series: 'Breaking Bad',
+    role: 'Chemistry Teacher & Albuquerque Kingpin',
+    description:
+      'A brilliant former chemist turned feared meth kingpin who built an empire under the moniker Heisenberg.',
+    avatarUrl: 'https://wallpaperaccess.com/full/1187428.jpg',
+  },
+  'peaky blinders': {
+    name: 'Thomas Shelby',
+    series: 'Peaky Blinders',
+    role: 'Leader of the Peaky Blinders',
+    description:
+      'The calculated, cold-eyed leader of the Birmingham criminal syndicate whose ambition reaches the highest echelons of power.',
+  },
+  'chhota bheem': {
+    name: 'Chhota Bheem',
+    series: 'Dholakpur Universe',
+    role: 'Hero of Dholakpur',
+    description:
+      'The courageous, laddu-loving boy hero of Dholakpur who protects King Indraverma and the villagers with incredible strength and kindness.',
+    avatarUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/d/d4/Chhota_Bheem.jpg/250px-Chhota_Bheem.jpg',
+  },
+};
+
+function cleanQueryTerm(raw: string): string {
+  return raw
+    .replace(/\b(season\s*\d+|episode\s*\d+|s\d+|ep\s*\d+)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 async function fetchLiveWikipediaEntities(q: string, signal?: AbortSignal): Promise<LiveInstantResult[]> {
   const cleanQ = q.trim();
   if (cleanQ.length < 2) return [];
 
+  const sanitizedQ = cleanQueryTerm(cleanQ) || cleanQ;
+  const lowerSanitized = sanitizedQ.toLowerCase();
+
   try {
     const url = `https://en.wikipedia.org/w/api.php?action=query&generator=prefixsearch&gpssearch=${encodeURIComponent(
-      cleanQ
+      sanitizedQ
     )}&gpslimit=8&prop=pageimages|description|extracts&piprop=thumbnail&pithumbsize=360&pilim=8&exintro=1&explaintext=1&exchars=140&format=json&origin=*`;
 
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'GuildTalkApp/1.0.3 (contact@guildtalk.app)' },
+      headers: { 'User-Agent': 'GuildTalkApp/1.0.4 (contact@guildtalk.app)' },
       signal: signal || AbortSignal.timeout(3500),
     });
 
@@ -81,6 +136,20 @@ async function fetchLiveWikipediaEntities(q: string, signal?: AbortSignal): Prom
     pages.sort((a, b) => (a.index || 99) - (b.index || 99));
 
     const results: LiveInstantResult[] = [];
+
+    // If query matches a known television series / franchise, insert lead protagonist first
+    const matchedShow = SHOW_PROTAGONIST_MAP[lowerSanitized];
+    if (matchedShow) {
+      results.push({
+        id: `protagonist-${matchedShow.name.toLowerCase().replace(/\s+/g, '-')}`,
+        name: matchedShow.name,
+        series: matchedShow.series,
+        role: matchedShow.role,
+        avatarUrl: matchedShow.avatarUrl || '',
+        description: matchedShow.description,
+      });
+    }
+
     for (const page of pages) {
       const title: string = page.title || '';
       const desc: string = page.description || page.extract || '';
@@ -94,7 +163,6 @@ async function fetchLiveWikipediaEntities(q: string, signal?: AbortSignal): Prom
         lowerTitle.includes('filmography') ||
         lowerTitle.includes('discography') ||
         lowerTitle.includes('soundtrack') ||
-        lowerTitle.includes('season ') ||
         lowerTitle.includes('awards and') ||
         lowerTitle.includes('episode ') ||
         lowerTitle.includes('video game') ||
@@ -107,6 +175,11 @@ async function fetchLiveWikipediaEntities(q: string, signal?: AbortSignal): Prom
       const match = title.match(/^(.*?)\s*\((.*?)\)$/);
       const cleanName = match ? match[1].trim() : title;
       const series = match ? match[2].trim() : desc ? desc.split('·')[0].trim() : 'Famous Universe';
+
+      // Avoid duplicate of protagonist
+      if (matchedShow && cleanName.toLowerCase() === matchedShow.name.toLowerCase()) {
+        continue;
+      }
 
       results.push({
         id: `wiki-${page.pageid || cleanName.toLowerCase().replace(/\s+/g, '-')}`,

@@ -359,16 +359,18 @@ export async function scheduleHourlyCompanionReminder(
         message = getCharacterReminderMessage(char.name, userName);
       }
 
-      // Persist to guarantee 100% parity with in-app notification feed
-      await savePersistedReminder({
-        id: `char-reminder-${char.id}`,
-        title,
-        body: message,
-        characterId: char.id,
-        characterName: char.name,
-        characterAvatar: char.avatarUrl,
-        timestamp: Date.now(),
-      });
+      // Persist only the most immediate companion reminder so in-app feed is clean and spaced out
+      if (i === 0) {
+        await savePersistedReminder({
+          id: `char-reminder-${char.id}`,
+          title,
+          body: message,
+          characterId: char.id,
+          characterName: char.name,
+          characterAvatar: char.avatarUrl,
+          timestamp: Date.now() - 1800000, // 30m ago for realistic context
+        });
+      }
 
       await Notifications.scheduleNotificationAsync({
         content: {
@@ -555,8 +557,8 @@ export async function getInAppNotifications(
 
   const notifications: InAppNotification[] = [];
 
-  // 1. Liked Character Reminders
-  likedCharacters.forEach((char, idx) => {
+  // 1. Liked Character Reminders (Top 2 companions with realistic spaced-out timing)
+  likedCharacters.slice(0, 2).forEach((char, idx) => {
     const notifId = `char-reminder-${char.id}`;
     if (dismissedSet.has(notifId)) return;
 
@@ -569,7 +571,7 @@ export async function getInAppNotifications(
     if (!persisted) {
       title = `${char.name} sent a message`;
       message = getCharacterReminderMessage(char.name, userName);
-      timestamp = Date.now() - (idx + 1) * 3600000;
+      timestamp = Date.now() - (idx * 2 + 1) * 3600000;
       savePersistedReminder({
         id: notifId,
         title,

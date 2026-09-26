@@ -611,6 +611,59 @@ async function directAzureSearchCandidates(
   const cleanQ = query.trim();
   if (!cleanQ) return [];
 
+  const lowerQ = cleanQ
+    .toLowerCase()
+    .replace(/\b(season\s*\d+|episode\s*\d+|s\d+|ep\s*\d+)\b/gi, '')
+    .trim();
+
+  // Known iconic TV series / show protagonist mapping
+  const SHOW_PROTAGONIST_MAP: Record<
+    string,
+    { name: string; series: string; role: string; description: string; avatarUrl?: string }
+  > = {
+    'the mentalist': {
+      name: 'Patrick Jane',
+      series: 'The Mentalist',
+      role: 'CBI Independent Consultant & Master Mentalist',
+      description:
+        'A former celebrity psychic medium who uses keen observation, psychological manipulation, and razor-sharp deduction to assist the California Bureau of Investigation.',
+      avatarUrl: 'https://upload.wikimedia.org/wikipedia/en/b/b3/Patrick_Jane.jpg',
+    },
+    'mentalist': {
+      name: 'Patrick Jane',
+      series: 'The Mentalist',
+      role: 'CBI Independent Consultant & Master Mentalist',
+      description:
+        'A former celebrity psychic medium who uses keen observation, psychological manipulation, and razor-sharp deduction to assist the California Bureau of Investigation.',
+      avatarUrl: 'https://upload.wikimedia.org/wikipedia/en/b/b3/Patrick_Jane.jpg',
+    },
+    'breaking bad': {
+      name: 'Walter White (Heisenberg)',
+      series: 'Breaking Bad',
+      role: 'Chemistry Teacher & Albuquerque Kingpin',
+      description:
+        'A brilliant former chemist turned feared meth kingpin who built an empire under the moniker Heisenberg.',
+      avatarUrl: 'https://wallpaperaccess.com/full/1187428.jpg',
+    },
+    'peaky blinders': {
+      name: 'Thomas Shelby',
+      series: 'Peaky Blinders',
+      role: 'Leader of the Peaky Blinders',
+      description:
+        'The calculated, cold-eyed leader of the Birmingham criminal syndicate whose ambition reaches the highest echelons of power.',
+    },
+    'chhota bheem': {
+      name: 'Chhota Bheem',
+      series: 'Dholakpur Universe',
+      role: 'Hero of Dholakpur',
+      description:
+        'The courageous, laddu-loving boy hero of Dholakpur who protects King Indraverma and the villagers with incredible strength and kindness.',
+      avatarUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/d/d4/Chhota_Bheem.jpg/250px-Chhota_Bheem.jpg',
+    },
+  };
+
+  const matchedShow = SHOW_PROTAGONIST_MAP[lowerQ];
+
   const apiKey = getAzureApiKey();
   if (apiKey) {
     try {
@@ -646,35 +699,71 @@ async function directAzureSearchCandidates(
         let parsed = JSON.parse(cleaned);
         if (!Array.isArray(parsed)) parsed = [parsed];
 
-        const defaultAvatars = [
-          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&q=80',
-          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&q=80',
-          'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=500&q=80',
-        ];
-
-        return parsed.slice(0, 3).map((c: any, idx: number) => ({
+        const candidates = parsed.slice(0, 3).map((c: any, idx: number) => ({
           id: `candidate-${Date.now()}-${idx}`,
-          name: c.name || cleanQ,
-          series: c.series || 'Famous Universe',
-          role: c.role || 'Companion',
+          name: c.name || (matchedShow && idx === 0 ? matchedShow.name : cleanQ),
+          series: c.series || (matchedShow ? matchedShow.series : 'Famous Universe'),
+          role: c.role || (matchedShow ? matchedShow.role : 'Companion'),
           shortDescription: c.shortDescription || '',
           description: c.shortDescription || '',
           personality: Array.isArray(c.personality) ? c.personality : ['Smart', 'Charismatic'],
           roleplayRules: 'Speak in-character with genuine charm, emotion, and wit.',
           greeting: c.greeting || `Hello! I am ${c.name || cleanQ}.`,
           starters: ['Tell me about your world.', 'What is your greatest adventure?'],
-          avatarUrl: defaultAvatars[idx % defaultAvatars.length],
-          coverUrl: defaultAvatars[idx % defaultAvatars.length],
+          avatarUrl: (matchedShow && idx === 0 ? matchedShow.avatarUrl : '') || '',
+          coverUrl: (matchedShow && idx === 0 ? matchedShow.avatarUrl : '') || '',
           accent: '#FFFFFF',
           isCustom: true,
         }));
+
+        if (matchedShow && !candidates.some((c: any) => c.name.toLowerCase().includes(matchedShow.name.toLowerCase()))) {
+          candidates.unshift({
+            id: `candidate-${Date.now()}-lead`,
+            name: matchedShow.name,
+            series: matchedShow.series,
+            role: matchedShow.role,
+            shortDescription: matchedShow.description,
+            description: matchedShow.description,
+            personality: ['Sharp', 'Observant', 'Charming', 'Calculated'],
+            roleplayRules: 'Speak in-character with razor-sharp perception, witty psychology, and charm.',
+            greeting: `Hello. I am ${matchedShow.name}. Observing people is my specialty—what brings you here?`,
+            starters: ['Read my mind.', 'What gave away the suspect?'],
+            avatarUrl: matchedShow.avatarUrl || '',
+            coverUrl: matchedShow.avatarUrl || '',
+            accent: '#0A84FF',
+            isCustom: true,
+          });
+        }
+
+        return candidates;
       }
     } catch (e) {
       console.log('Direct Azure candidate search failed, using instant persona:', e);
     }
   }
 
-  // Guaranteed instant persona so the user is never stuck
+  // Guaranteed instant persona with real protagonist fallback
+  if (matchedShow) {
+    return [
+      {
+        id: `candidate-${Date.now()}-0`,
+        name: matchedShow.name,
+        series: matchedShow.series,
+        role: matchedShow.role,
+        shortDescription: matchedShow.description,
+        description: matchedShow.description,
+        personality: ['Sharp', 'Observant', 'Charming', 'Calculated'],
+        roleplayRules: 'Speak in-character with razor-sharp perception, witty psychology, and charm.',
+        greeting: `Hello. I am ${matchedShow.name}. Observing people is my specialty—what brings you here?`,
+        starters: ['Read my mind.', 'What gave away the suspect?'],
+        avatarUrl: matchedShow.avatarUrl || '',
+        coverUrl: matchedShow.avatarUrl || '',
+        accent: '#0A84FF',
+        isCustom: true,
+      },
+    ];
+  }
+
   return [
     {
       id: `candidate-${Date.now()}-0`,
@@ -687,8 +776,8 @@ async function directAzureSearchCandidates(
       roleplayRules: 'Speak in-character with genuine charm and wit.',
       greeting: `Greetings! I am ${cleanQ}. What shall we explore together?`,
       starters: ['Tell me about yourself.', 'What is your greatest battle?'],
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&q=80',
-      coverUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&q=80',
+      avatarUrl: '',
+      coverUrl: '',
       accent: '#FFFFFF',
       isCustom: true,
     },

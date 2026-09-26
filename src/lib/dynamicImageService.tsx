@@ -33,8 +33,12 @@ const listeners = new Set<CacheListener>();
   } catch {}
 })();
 
-function getCacheKey(name: string, series?: string): string {
-  return `${(name || '').trim().toLowerCase()}:::${(series || '').trim().toLowerCase()}`;
+export function getCacheKey(name: string, _series?: string): string {
+  return (name || '').trim().toLowerCase();
+}
+
+export function getResolvedCharacterImage(name: string): string | null {
+  return memoryImageCache.get(getCacheKey(name)) || null;
 }
 
 async function persistCache() {
@@ -50,47 +54,110 @@ async function persistCache() {
 async function directClientWikipediaCandidates(name: string, series?: string): Promise<string[]> {
   const cleanName = (name || '').trim();
   if (!cleanName) return [];
-  const queries = [cleanName, series ? `${cleanName} ${series}` : null].filter(Boolean) as string[];
+  const nameTokens = cleanName.toLowerCase().split(/\s+/).filter((t) => t.length > 2);
   const candidates: string[] = [];
 
-  for (const q of queries) {
-    try {
-      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&srlimit=4&format=json&origin=*`;
-      const res = await fetch(searchUrl, {
-        headers: { 'User-Agent': 'GuildTalkApp/1.0.3 (contact@guildtalk.app)' },
-        signal: AbortSignal.timeout(4000),
-      });
-      if (!res.ok) continue;
+  try {
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
+      cleanName
+    )}&srlimit=5&format=json&origin=*`;
+    const res = await fetch(searchUrl, {
+      headers: { 'User-Agent': 'GuildTalkApp/1.0.4 (contact@guildtalk.app)' },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (res.ok) {
       const data = await res.json();
       const items = data?.query?.search || [];
+
+      // Find direct matches where title includes core tokens of character's name
+      let primaryTitle: string | null = null;
       for (const item of items) {
-        const title = item.title;
-        if (!title) continue;
-        const sumUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
-        const sumRes = await fetch(sumUrl, {
-          headers: { 'User-Agent': 'GuildTalkApp/1.0.3 (contact@guildtalk.app)' },
-          signal: AbortSignal.timeout(3500),
-        });
-        if (!sumRes.ok) continue;
-        const sumData = await sumRes.json();
-        const img = sumData?.originalimage?.source || sumData?.thumbnail?.source;
-        if (
-          img &&
-          typeof img === 'string' &&
-          img.startsWith('http') &&
-          !img.includes('.svg') &&
-          !img.includes('coat_of_arms') &&
-          !img.includes('flag') &&
-          !img.includes('document') &&
-          !img.includes('manuscript') &&
-          !img.includes('paper')
-        ) {
-          candidates.push(img);
+        const title = item.title || '';
+        const titleLower = title.toLowerCase();
+        const isMatch =
+          nameTokens.some((tok) => titleLower.includes(tok)) || cleanName.toLowerCase().includes(titleLower);
+        if (isMatch) {
+          if (!primaryTitle) primaryTitle = title;
+          try {
+            const sumUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+            const sumRes = await fetch(sumUrl, {
+              headers: { 'User-Agent': 'GuildTalkApp/1.0.4 (contact@guildtalk.app)' },
+              signal: AbortSignal.timeout(3000),
+            });
+            if (sumRes.ok) {
+              const sumData = await sumRes.json();
+              const img = sumData?.originalimage?.source || sumData?.thumbnail?.source;
+              if (
+                img &&
+                typeof img === 'string' &&
+                !img.includes('.svg') &&
+                !img.includes('flag') &&
+                !img.includes('icon') &&
+                !img.includes('logo') &&
+                !img.includes('coat_of_arms') &&
+                !img.includes('document') &&
+                !img.includes('manuscript')
+              ) {
+                if (!candidates.includes(img)) candidates.push(img);
+              }
+            }
+          } catch {}
         }
       }
-      if (candidates.length > 0) break;
-    } catch {}
-  }
+
+      // If we found a primary matching article, fetch in-page image files from that article
+      if (primaryTitle && candidates.length < 5) {
+        try {
+          const filesUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(
+            primaryTitle
+          )}&prop=images&imlimit=15&format=json&origin=*`;
+          const filesRes = await fetch(filesUrl, {
+            headers: { 'User-Agent': 'GuildTalkApp/1.0.4 (contact@guildtalk.app)' },
+            signal: AbortSignal.timeout(3500),
+          });
+          if (filesRes.ok) {
+            const filesData = await filesRes.json();
+            const pages = Object.values(filesData?.query?.pages || {}) as any[];
+            const imagesList = pages[0]?.images || [];
+            const fileTitles = imagesList
+              .map((im: any) => im.title)
+              .filter(
+                (t: string) =>
+                  t &&
+                  !t.endsWith('.svg') &&
+                  !t.includes('Flag') &&
+                  !t.includes('Icon') &&
+                  !t.includes('Portal') &&
+                  !t.includes('Commons') &&
+                  !t.includes('Logo')
+              )
+              .slice(0, 4);
+
+            for (const fTitle of fileTitles) {
+              try {
+                const infoUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(
+                  fTitle
+                )}&prop=imageinfo&iiprop=url&iiurlwidth=600&format=json&origin=*`;
+                const infoRes = await fetch(infoUrl, {
+                  headers: { 'User-Agent': 'GuildTalkApp/1.0.4 (contact@guildtalk.app)' },
+                  signal: AbortSignal.timeout(3000),
+                });
+                if (infoRes.ok) {
+                  const infoData = await infoRes.json();
+                  const ipages = Object.values(infoData?.query?.pages || {}) as any[];
+                  const url = ipages[0]?.imageinfo?.[0]?.thumburl || ipages[0]?.imageinfo?.[0]?.url;
+                  if (url && typeof url === 'string' && url.startsWith('http') && !candidates.includes(url)) {
+                    candidates.push(url);
+                  }
+                }
+              } catch {}
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
   return candidates;
 }
 
@@ -198,17 +265,33 @@ export async function cycleCharacterImage(
 
   // Filter out stock photos or blank URLs
   const cleanPool = pool.filter(
-    (u) => u && typeof u === 'string' && !u.includes('unsplash.com') && !u.includes('dicebear.com') && !u.includes('.svg')
+    (u) =>
+      u &&
+      typeof u === 'string' &&
+      !u.includes('unsplash.com') &&
+      !u.includes('dicebear.com') &&
+      !u.includes('.svg') &&
+      !u.includes('placeholder')
   );
-  const activePool = cleanPool.length > 0 ? cleanPool : pool;
+
+  // If we only have 1 verified look or none, don't jump to dummy images!
+  if (cleanPool.length <= 1) {
+    const existing =
+      cleanPool[0] ||
+      (currentUrl && !currentUrl.includes('dicebear') && !currentUrl.includes('unsplash') ? currentUrl : null);
+    if (existing) {
+      memoryImageCache.set(key, existing);
+      return existing;
+    }
+  }
 
   // Pick a candidate that is guaranteed different from currentUrl
-  const filtered = activePool.filter((u) => u !== currentUrl && u !== char.avatarUrl);
+  const filtered = cleanPool.filter((u) => u !== currentUrl && u !== char.avatarUrl);
   const pick =
     filtered.length > 0
       ? filtered[Math.floor(Math.random() * filtered.length)]
-      : activePool.length > 0
-      ? activePool[Math.floor(Math.random() * activePool.length)]
+      : cleanPool.length > 0
+      ? cleanPool[Math.floor(Math.random() * cleanPool.length)]
       : null;
 
   if (pick && pick !== currentUrl) {
@@ -220,7 +303,7 @@ export async function cycleCharacterImage(
 
   // If still no pool, run a forced resolution and pick
   const freshUrl = await resolveCharacterImage(char, true);
-  if (freshUrl && !freshUrl.includes('unsplash.com')) {
+  if (freshUrl && !freshUrl.includes('unsplash.com') && !freshUrl.includes('dicebear.com')) {
     memoryImageCache.set(key, freshUrl);
     persistCache().catch(() => {});
     listeners.forEach((fn) => fn(key, freshUrl));
@@ -247,7 +330,13 @@ export async function getCharacterCandidateLooks(
         directClientWikipediaCandidates(char.name, char.series),
       ]);
       const gathered = new Set<string>();
-      if (char.avatarUrl && !char.avatarUrl.includes('unsplash.com')) gathered.add(char.avatarUrl);
+      if (
+        char.avatarUrl &&
+        !char.avatarUrl.includes('unsplash.com') &&
+        !char.avatarUrl.includes('dicebear.com')
+      ) {
+        gathered.add(char.avatarUrl);
+      }
       if (serverRes.status === 'fulfilled' && serverRes.value?.candidates) {
         serverRes.value.candidates.forEach((u) => gathered.add(u));
       }
@@ -261,12 +350,26 @@ export async function getCharacterCandidateLooks(
     } catch {}
   }
 
+  // Filter out any dummy, unsplash, or dicebear images
   const cleanPool = pool.filter(
-    (u) => u && typeof u === 'string' && !u.includes('unsplash.com') && !u.includes('dicebear.com') && !u.includes('.svg')
+    (u) =>
+      u &&
+      typeof u === 'string' &&
+      !u.includes('unsplash.com') &&
+      !u.includes('dicebear.com') &&
+      !u.includes('.svg') &&
+      !u.includes('placeholder')
   );
+
   if (cleanPool.length > 0) return cleanPool.slice(0, 8);
-  if (char.avatarUrl && !char.avatarUrl.includes('unsplash.com')) return [char.avatarUrl];
-  return pool.slice(0, 8);
+  if (
+    char.avatarUrl &&
+    !char.avatarUrl.includes('unsplash.com') &&
+    !char.avatarUrl.includes('dicebear.com')
+  ) {
+    return [char.avatarUrl];
+  }
+  return [];
 }
 
 /**
@@ -294,10 +397,19 @@ export function useDynamicCharacterImage(
   const series = character?.series || '';
   const key = getCacheKey(name, series);
 
-  const initialUrl =
-    (options?.preferCover ? character?.coverUrl || character?.avatarUrl : character?.avatarUrl || character?.coverUrl) ||
-    memoryImageCache.get(key) ||
-    '';
+  const isDummy = (url?: string) =>
+    !url ||
+    typeof url !== 'string' ||
+    url.includes('dicebear.com') ||
+    url.includes('unsplash.com') ||
+    url.includes('placeholder');
+
+  const rawUrl = options?.preferCover
+    ? character?.coverUrl || character?.avatarUrl
+    : character?.avatarUrl || character?.coverUrl;
+
+  const cachedUrl = memoryImageCache.get(key);
+  const initialUrl = (!isDummy(cachedUrl) ? cachedUrl : '') || (!isDummy(rawUrl) ? rawUrl : '') || '';
 
   const [currentUri, setCurrentUri] = useState<string>(initialUrl);
   const [isResolving, setIsResolving] = useState(false);
@@ -313,17 +425,17 @@ export function useDynamicCharacterImage(
   // Sync when character or cache updates
   useEffect(() => {
     const cached = memoryImageCache.get(key);
-    if (cached && cached !== currentUri) {
+    if (cached && !isDummy(cached) && cached !== currentUri) {
       setCurrentUri(cached);
-    } else if (!currentUri && (character?.coverUrl || character?.avatarUrl)) {
-      setCurrentUri(options?.preferCover ? character.coverUrl || character.avatarUrl! : character.avatarUrl || character.coverUrl!);
+    } else if (isDummy(currentUri) && !isDummy(rawUrl)) {
+      setCurrentUri(rawUrl!);
     }
-  }, [key, character, options?.preferCover]);
+  }, [key, currentUri, rawUrl]);
 
   // Subscribe to global image resolution broadcasts
   useEffect(() => {
     const onUpdate: CacheListener = (updatedKey, newUrl) => {
-      if (updatedKey === key && isMounted.current) {
+      if (updatedKey === key && isMounted.current && !isDummy(newUrl)) {
         setCurrentUri(newUrl);
         setIsResolving(false);
       }
@@ -334,18 +446,18 @@ export function useDynamicCharacterImage(
     };
   }, [key]);
 
-  // If initially missing any URL, proactively resolve
+  // If initially missing any valid URL, proactively resolve
   useEffect(() => {
-    if (name && !currentUri) {
+    if (name && (isDummy(currentUri) || !currentUri)) {
       setIsResolving(true);
       resolveCharacterImage(character, false).then((res) => {
         if (isMounted.current) {
-          if (res) setCurrentUri(res);
+          if (res && !isDummy(res)) setCurrentUri(res);
           setIsResolving(false);
         }
       });
     }
-  }, [name, currentUri]);
+  }, [name, currentUri, character]);
 
   // Triggered when an <Image> fails to load (e.g. 404 / hotlink blocked)
   const onImageError = useCallback(() => {

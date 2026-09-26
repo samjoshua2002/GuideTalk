@@ -343,7 +343,7 @@ export default function ChatScreen() {
 
   useEffect(() => {
     if (!character?.id) return;
-    const uid = user?.id;
+    const uid = user?.id || 'guest';
     isFavorite(character.id, uid).then(setIsFav);
     isCharHiddenFromRecent(character.id, uid).then(setIsHiddenFromRecent);
     const unsub = subscribeToFavorites(() => {
@@ -356,14 +356,16 @@ export default function ChatScreen() {
   const handleToggleFavorite = async () => {
     if (!character) return;
     triggerHaptic('medium');
-    const newState = await toggleFavorite(character.id, user?.id);
+    const uid = user?.id || 'guest';
+    const newState = await toggleFavorite(character.id, uid, character);
     setIsFav(newState);
   };
 
   const handleToggleHideRecent = async () => {
     if (!character) return;
     triggerHaptic('medium');
-    const newState = await toggleHideFromRecent(character.id, user?.id);
+    const uid = user?.id || 'guest';
+    const newState = await toggleHideFromRecent(character.id, uid);
     setIsHiddenFromRecent(newState);
   };
 

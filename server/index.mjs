@@ -619,15 +619,17 @@ async function fetchWikipediaCharacterArt(name, series = '') {
   ].filter(Boolean);
 
   const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' };
+  const nameTokens = cleanName.toLowerCase().split(/\s+/).filter((t) => t.length > 2);
 
   for (const q of searchQueries) {
     try {
-      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&srlimit=4&format=json&origin=*`;
+      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&srlimit=5&format=json&origin=*`;
       const sRes = await fetch(searchUrl, { headers, signal: AbortSignal.timeout(4500) });
       if (!sRes.ok) continue;
       const sData = await sRes.json();
       const results = sData?.query?.search || [];
       const candidates = [];
+      let primaryTitle = null;
 
       for (const item of results) {
         const title = item.title;
@@ -636,10 +638,14 @@ async function fetchWikipediaCharacterArt(name, series = '') {
           lowerTitle.includes('discography') ||
           lowerTitle.includes('filmography') ||
           lowerTitle.includes('list of') ||
-          lowerTitle.includes('season ') ||
-          lowerTitle.includes('episode') ||
+          lowerTitle.includes('soundtrack') ||
           lowerTitle.includes('album')
         ) continue;
+
+        const isMatch = nameTokens.some((tok) => lowerTitle.includes(tok)) || cleanName.toLowerCase().includes(lowerTitle);
+        if (!isMatch) continue;
+
+        if (!primaryTitle) primaryTitle = title;
 
         const sumUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
         const sumRes = await fetch(sumUrl, { headers, signal: AbortSignal.timeout(3500) });
@@ -647,8 +653,53 @@ async function fetchWikipediaCharacterArt(name, series = '') {
         const sumData = await sumRes.json();
         const img = sumData?.originalimage?.source || sumData?.thumbnail?.source;
         if (img && isValidCharacterImage(img)) {
-          candidates.push(img);
+          if (!candidates.includes(img)) candidates.push(img);
         }
+      }
+
+      // If we found a matching article, also extract images from that specific page
+      if (primaryTitle && candidates.length < 5) {
+        try {
+          const filesUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(
+            primaryTitle
+          )}&prop=images&imlimit=15&format=json&origin=*`;
+          const fRes = await fetch(filesUrl, { headers, signal: AbortSignal.timeout(3500) });
+          if (fRes.ok) {
+            const fData = await fRes.json();
+            const pages = Object.values(fData?.query?.pages || {});
+            const imagesList = pages[0]?.images || [];
+            const fileTitles = imagesList
+              .map((im) => im.title)
+              .filter(
+                (t) =>
+                  t &&
+                  !t.endsWith('.svg') &&
+                  !t.includes('Flag') &&
+                  !t.includes('Icon') &&
+                  !t.includes('Portal') &&
+                  !t.includes('Commons') &&
+                  !t.includes('Logo')
+              )
+              .slice(0, 4);
+
+            for (const fTitle of fileTitles) {
+              try {
+                const infoUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(
+                  fTitle
+                )}&prop=imageinfo&iiprop=url&iiurlwidth=600&format=json&origin=*`;
+                const iRes = await fetch(infoUrl, { headers, signal: AbortSignal.timeout(3000) });
+                if (iRes.ok) {
+                  const iData = await iRes.json();
+                  const ipages = Object.values(iData?.query?.pages || {});
+                  const url = ipages[0]?.imageinfo?.[0]?.thumburl || ipages[0]?.imageinfo?.[0]?.url;
+                  if (url && isValidCharacterImage(url) && !candidates.includes(url)) {
+                    candidates.push(url);
+                  }
+                }
+              } catch {}
+            }
+          }
+        } catch {}
       }
 
       if (candidates.length > 0) {
@@ -859,12 +910,12 @@ async function fetchMultipleCharacterImages(name, series = '', count = 8, origin
 
   // 2. Query Wikipedia, AniList & Kitsu in parallel for names
   const promises = [];
+  const isAnime = isAnimeOriented(cleanName, series);
   for (const n of namesToTry.slice(0, 3)) {
-    promises.push(
-      fetchWikipediaCharacterArt(n, series),
-      fetchAniListArt(n),
-      fetchKitsuArt(n)
-    );
+    promises.push(fetchWikipediaCharacterArt(n, series));
+    if (isAnime) {
+      promises.push(fetchAniListArt(n), fetchKitsuArt(n));
+    }
   }
 
   const settled = await Promise.allSettled(promises);
@@ -892,7 +943,7 @@ const server = http.createServer(async (request, response) => {
     return sendJson(response, 200, {
       status: 'healthy',
       service: 'GuildTalk Backend',
-      version: '1.0.4',
+      version: '1.0.5',
       uptime: Math.round(process.uptime()),
       timestamp: new Date().toISOString(),
     });
@@ -2445,17 +2496,17 @@ const server = http.createServer(async (request, response) => {
     // ----------------------------------------------------------------------
     if (request.method === 'GET' && pathname === '/app/version') {
       return sendJson(response, 200, {
-        latestVersion: process.env.APP_LATEST_VERSION || '1.0.4',
-        latestVersionCode: Number(process.env.APP_LATEST_VERSION_CODE || 5),
+        latestVersion: process.env.APP_LATEST_VERSION || '1.0.5',
+        latestVersionCode: Number(process.env.APP_LATEST_VERSION_CODE || 6),
         apkUrl: process.env.APP_APK_URL || 'https://expo.dev/accounts/samjoshua2002/projects/guildtalk/builds',
         title: 'New GuideTalk Update Available! 🚀',
-        message: 'GuideTalk v1.0.4 brings live Google-style instant character search with Wikipedia & AniList, 100% synchronized notifications, and instant 1-tap chat.',
+        message: 'GuideTalk v1.0.5 brings verified authentic character looks, instant series protagonist resolution, reactive feed hiding, and high-performance system notifications.',
         releaseNotes: [
-          'Live Google-style instant search: find any character or anime figure while typing with official HD art',
-          'AniList GraphQL integration for high-definition anime studio portraits and character lore',
-          'Verbatim notification sync: phone status bar and in-app bell modal match 100%',
-          'Instant 1-tap Change Look character styling in chat',
-          'Production-ready notification intervals and performance enhancements',
+          'Authentic Character Looks: Verified portraits only with zero dummy or random image padding',
+          'Series Protagonist Resolution: Instant lead recognition (Patrick Jane for The Mentalist, Walter White, etc.)',
+          'Dynamic Home & Activity Sync: Instant hide/delete without screen desync or avatar flashing',
+          'Discover New Features Modal: Full-screen update showcase with session-only skip behavior',
+          'System Notification Permission: Android status bar and lockscreen push notifications directly on app launch',
         ],
         forceUpdate: false,
       });
