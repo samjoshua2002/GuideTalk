@@ -45,6 +45,7 @@ import {
   fetchCharacterById,
   clearConversationMessages,
   deleteCharacterProfile,
+  enrichCharacterProfileWithAI,
   StoredMessage,
 } from '@/src/lib/chatApi';
 import { LiquidGlassView } from '@/src/components/LiquidGlassView';
@@ -507,31 +508,45 @@ export default function ChatScreen() {
   useEffect(() => {
     let isMounted = true;
     async function resolve() {
-      const local = getCharacter(id || '');
-      if (local) {
-        if (isMounted) setCharacter(local);
-        return;
-      }
-      try {
-        const direct = await fetchCharacterById(id || '', token);
-        if (direct && isMounted) {
-          setCharacter(direct);
-          return;
+      let resolvedChar = getCharacter(id || '');
+      if (!resolvedChar) {
+        try {
+          const direct = await fetchCharacterById(id || '', token);
+          if (direct) {
+            resolvedChar = direct;
+          } else {
+            const customChars = await fetchCharacters(user?.id, token);
+            resolvedChar = customChars.find((c: any) => c.id === id || c.mongoId === id || c._id === id);
+          }
+        } catch {
+          // Continue to fallback
         }
-        const customChars = await fetchCharacters(user?.id, token);
-        const match = customChars.find((c: any) => c.id === id || c.mongoId === id || c._id === id);
-        if (match && isMounted) {
-          setCharacter(match);
-          return;
-        }
-      } catch {
-        // Continue to fallback
       }
-      if (!isMounted) return;
-      // Fallback to match by id substring or first builtin character so user is never stuck
-      const all = getAllBuiltinCharacters();
-      const fallback = all.find((c) => c.id.toLowerCase().includes((id || '').toLowerCase())) || all[0];
-      if (fallback) setCharacter(fallback);
+
+      if (!resolvedChar) {
+        // Fallback to match by id substring or first builtin character so user is never stuck
+        const all = getAllBuiltinCharacters();
+        resolvedChar = all.find((c) => c.id.toLowerCase().includes((id || '').toLowerCase())) || all[0];
+      }
+
+      if (resolvedChar && isMounted) {
+        setCharacter(resolvedChar);
+
+        // Dynamic AI Canon Enrichment: if greeting or description is generic, fetch live from Azure OpenAI!
+        enrichCharacterProfileWithAI(resolvedChar)
+          .then((enriched) => {
+            if (enriched && isMounted) {
+              setCharacter((prev) => (prev ? { ...prev, ...enriched } : enriched));
+              setMessages((prevMsgs) => {
+                if (prevMsgs.length === 1 && prevMsgs[0].id === 'greeting') {
+                  return [{ ...prevMsgs[0], content: enriched.greeting || prevMsgs[0].content }];
+                }
+                return prevMsgs;
+              });
+            }
+          })
+          .catch(() => {});
+      }
     }
     resolve();
     return () => {

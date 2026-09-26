@@ -186,45 +186,175 @@ export async function searchOrCreate(query: string, token?: string | null): Prom
   return data.character;
 }
 
-export async function generateCharacterWithAI(query: string): Promise<Character> {
+export async function generateCharacterWithAI(
+  query: string,
+  preferredSeries?: string,
+  preferredAvatar?: string
+): Promise<Character> {
   try {
     const response = await apiFetch('/characters/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ query, series: preferredSeries }),
     });
     const result = await parseResponse<{ character: any }>(response);
     const c = result.character;
+    let resolvedImg = preferredAvatar || c.avatarUrl;
+    if (!resolvedImg || resolvedImg.includes('unsplash.com') || resolvedImg.includes('dicebear.com')) {
+      try {
+        const { getResolvedCharacterImage } = require('./dynamicImageService');
+        resolvedImg = getResolvedCharacterImage(c.name || query) || resolvedImg;
+      } catch {}
+    }
     return {
-      id: `custom-${Date.now()}`,
+      id: c.id || `custom-${Date.now()}`,
       name: c.name || query,
-      series: c.series || 'Custom Universe',
+      series: c.series || preferredSeries || 'Custom Universe',
       role: c.role || 'Companion',
       shortDescription: c.shortDescription || '',
       description: c.description || '',
       category: 'custom',
-      personality: Array.isArray(c.personality) ? c.personality : ['Smart', 'Emotional', 'Sarcastic'],
-      roleplayRules: c.roleplayRules || '',
-      greeting: c.greeting || 'Greetings, traveler.',
-      starters: Array.isArray(c.starters) ? c.starters : ['Hello!', 'Tell me about yourself.'],
-      avatarUrl: c.avatarUrl || 'https://static.zerochan.net/Furina.full.4024209.jpg',
-      coverUrl: c.avatarUrl || 'https://static.zerochan.net/Furina.full.4024209.jpg',
-      accent: c.accent || '#FFFFFF',
+      personality: Array.isArray(c.personality) && c.personality.length > 0 ? c.personality : ['Smart', 'Emotional', 'Authentic', 'Sharp'],
+      roleplayRules: c.roleplayRules || 'Speak in authentic canon character with emotional range and distinct wit.',
+      greeting: c.greeting || `*regards you with genuine presence* Greetings. What is on your mind today?`,
+      starters: Array.isArray(c.starters) && c.starters.length > 0 ? c.starters : ['Tell me about your world.', 'What is your secret?'],
+      avatarUrl: resolvedImg || '',
+      coverUrl: resolvedImg || '',
+      accent: c.accent || '#0A84FF',
       isOnline: true,
       isCustom: true,
     };
   } catch (err) {
     console.log('Backend generator unreachable, using direct client AI completion:', err);
     // Direct Azure OpenAI fallback if backend offline
-    return directGenerateCharacter(query);
+    return directGenerateCharacter(query, preferredSeries, preferredAvatar);
   }
 }
 
-async function directGenerateCharacter(query: string): Promise<Character> {
-  const prompt = `Recognize the character "${query}". Return a single JSON object with keys: name, series, role, shortDescription, description, personality (array), roleplayRules, greeting, starters (array of 3 strings), accent (hex).`;
+export async function directGenerateCharacter(
+  query: string,
+  preferredSeries?: string,
+  preferredAvatar?: string
+): Promise<Character> {
+  const prompt = [
+    `You are the master character designer and roleplay architect for GuideTalk.`,
+    `SUMMON & RECOGNIZE the character: "${query}"${preferredSeries ? ` from "${preferredSeries}"` : ''}.`,
+    `Your mission is to formulate their authentic canon persona, psychology, and speech style.`,
+    `Return ONLY a pure, valid JSON object with EXACT keys:`,
+    `- "name": Their true canon character name`,
+    `- "series": Origin universe, anime, TV series, or movie`,
+    `- "role": Their iconic title or role (e.g., "Independent Consultant for the CBI & Master Mentalist")`,
+    `- "shortDescription": 1 captivating, punchy sentence capturing their essence`,
+    `- "description": 2-3 deep, immersive paragraphs covering their backstory, motives, emotional scars, and intellectual depth`,
+    `- "personality": Array of 5 nuanced traits (e.g., ["Razor-Sharp Observer", "Playfully Cynical", "Deeply Mournful", "Theatrical Charm", "Unflappable"])`,
+    `- "roleplayRules": Strict guidelines for roleplaying this character. Specify their verbal habits, tone, stage directions in asterisks, and psychological demeanor.`,
+    `- "greeting": An evocative, authentic in-character opening greeting with stage directions in asterisks (never generic like "Hello, I am...")`,
+    `- "starters": Array of 3 thought-provoking, intriguing questions or conversation hooks to prompt the user`,
+    `- "accent": Hex color code matching their aura (e.g., "#0A84FF")`
+  ].join('\n');
+
   const url = getAzureOpenAIUrl('gpt-5.6-luna');
   const apiKey = getAzureApiKey();
   try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: prompt }],
+        max_completion_tokens: 1400,
+      }),
+    });
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content || '{}';
+    let cleaned = text.trim().replace(/^```json/, '').replace(/```$/, '').trim();
+    const parsed = JSON.parse(cleaned);
+
+    let initialAvatar = preferredAvatar;
+    if (!initialAvatar || initialAvatar.includes('unsplash.com') || initialAvatar.includes('dicebear.com')) {
+      try {
+        const { getResolvedCharacterImage } = require('./dynamicImageService');
+        initialAvatar = getResolvedCharacterImage(parsed.name || query) || '';
+      } catch {}
+    }
+
+    return {
+      id: `custom-${Date.now()}`,
+      name: parsed.name || query,
+      series: parsed.series || preferredSeries || 'Famous Universe',
+      role: parsed.role || 'Iconic Figure',
+      shortDescription: parsed.shortDescription || `Legendary persona for ${query}`,
+      description: parsed.description || `Legendary persona for ${query}`,
+      category: 'custom',
+      personality: Array.isArray(parsed.personality) && parsed.personality.length > 0 ? parsed.personality : ['Witty', 'Authentic', 'Sharp'],
+      roleplayRules: parsed.roleplayRules || 'Speak with authentic emotional flair and depth.',
+      greeting: parsed.greeting || `*smiles thoughtfully, observing you* It is intriguing to meet you. What thought is on your mind?`,
+      starters: Array.isArray(parsed.starters) && parsed.starters.length > 0 ? parsed.starters : ['Tell me about your world.', 'What is your secret?'],
+      avatarUrl: initialAvatar || '',
+      coverUrl: initialAvatar || '',
+      accent: parsed.accent || '#0A84FF',
+      isOnline: true,
+      isCustom: true,
+    };
+  } catch (err) {
+    console.error('Direct character generation failed:', err);
+    let fallbackAvatar = preferredAvatar;
+    if (!fallbackAvatar) {
+      try {
+        const { getResolvedCharacterImage } = require('./dynamicImageService');
+        fallbackAvatar = getResolvedCharacterImage(query) || '';
+      } catch {}
+    }
+    return {
+      id: `custom-${Date.now()}`,
+      name: query,
+      series: preferredSeries || 'Custom Origin',
+      role: 'Legendary Companion',
+      shortDescription: `Custom persona for ${query}`,
+      description: `A unique character known as ${query}. Ready to chat with charisma and emotional depth.`,
+      category: 'custom',
+      personality: ['Charismatic', 'Witty', 'Authentic'],
+      roleplayRules: 'Speak in full character with emotional range and charming wit.',
+      greeting: `*steps forward and nods warmly* Hello. I am ${query}. What brings you here today?`,
+      starters: ['What brings you here today?', 'Tell me a story from your world.'],
+      avatarUrl: fallbackAvatar || '',
+      coverUrl: fallbackAvatar || '',
+      accent: '#0A84FF',
+      isOnline: true,
+      isCustom: true,
+    };
+  }
+}
+
+/**
+ * Dynamically enriches any character with live AI canon details (greeting, psychological traits, lore)
+ * if their current data is generic or unpopulated.
+ */
+export async function enrichCharacterProfileWithAI(char: Character): Promise<Character> {
+  const isGenericGreeting =
+    !char.greeting ||
+    char.greeting.startsWith('Hello! I am') ||
+    char.greeting.startsWith('Greetings! I am') ||
+    char.greeting.startsWith('Greetings, traveler');
+  const isMinimalLore = !char.description || char.description.length < 80;
+
+  if (!isGenericGreeting && !isMinimalLore) {
+    return char;
+  }
+
+  try {
+    const prompt = [
+      `The user is interacting with character "${char.name}"${char.series ? ` from "${char.series}"` : ''}.`,
+      `Formulate their deep canon persona. Return ONLY a single JSON object with keys:`,
+      `- "greeting": An evocative, authentic in-character opening greeting with stage directions in asterisks`,
+      `- "personality": Array of 5 nuanced traits reflecting their psychology`,
+      `- "roleplayRules": Strict behavioral rules to roleplay this persona`,
+      `- "starters": Array of 3 in-character questions or starters`,
+      `- "description": 2 rich paragraphs of their background lore`,
+      `- "role": Their iconic title/role`
+    ].join('\n');
+
+    const url = getAzureOpenAIUrl('gpt-5.6-luna');
+    const apiKey = getAzureApiKey();
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
@@ -237,48 +367,18 @@ async function directGenerateCharacter(query: string): Promise<Character> {
     const text = data?.choices?.[0]?.message?.content || '{}';
     let cleaned = text.trim().replace(/^```json/, '').replace(/```$/, '').trim();
     const parsed = JSON.parse(cleaned);
-    const initialAvatar =
-      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop&q=80';
+
     return {
-      id: `custom-${Date.now()}`,
-      name: parsed.name || query,
-      series: parsed.series || 'Custom Origin',
-      role: parsed.role || 'Companion',
-      shortDescription: parsed.shortDescription || `Legendary persona for ${query}`,
-      description: parsed.description || `Legendary persona for ${query}`,
-      category: 'custom',
-      personality: Array.isArray(parsed.personality) ? parsed.personality : ['Witty', 'Emotional'],
-      roleplayRules: parsed.roleplayRules || 'Speak with authentic emotional flair and depth.',
-      greeting: parsed.greeting || `Greetings! I am ${parsed.name || query}.`,
-      starters: Array.isArray(parsed.starters) && parsed.starters.length > 0 ? parsed.starters : ['Tell me about your world.', 'What is your secret?'],
-      avatarUrl: initialAvatar,
-      coverUrl: initialAvatar,
-      accent: parsed.accent || '#FFFFFF',
-      isOnline: true,
-      isCustom: true,
+      ...char,
+      role: parsed.role || char.role,
+      greeting: parsed.greeting || char.greeting,
+      personality: Array.isArray(parsed.personality) && parsed.personality.length > 0 ? parsed.personality : char.personality,
+      roleplayRules: parsed.roleplayRules || char.roleplayRules,
+      starters: Array.isArray(parsed.starters) && parsed.starters.length > 0 ? parsed.starters : char.starters,
+      description: parsed.description || char.description,
     };
-  } catch (err) {
-    console.error('Direct character generation failed:', err);
-    const fallbackAvatar =
-      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&auto=format&fit=crop&q=80';
-    return {
-      id: `custom-${Date.now()}`,
-      name: query,
-      series: 'Custom Origin',
-      role: 'Legendary Companion',
-      shortDescription: `Custom persona for ${query}`,
-      description: `A unique character known as ${query}. Ready to chat with charisma and emotional depth.`,
-      category: 'custom',
-      personality: ['Charismatic', 'Witty', 'Authentic'],
-      roleplayRules: 'Speak in full character with emotional range and charming wit.',
-      greeting: `Greetings! I am ${query}. It is wonderful to meet you.`,
-      starters: ['What brings you here today?', 'Tell me a story from your world.'],
-      avatarUrl: fallbackAvatar,
-      coverUrl: fallbackAvatar,
-      accent: '#FFFFFF',
-      isOnline: true,
-      isCustom: true,
-    };
+  } catch {
+    return char;
   }
 }
 

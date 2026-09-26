@@ -25,10 +25,11 @@ import {
   searchMultiCharacters,
   saveCustomCharacter,
   listConversations,
+  generateCharacterWithAI,
   CharacterCandidate,
 } from '@/src/lib/chatApi';
 import { getAllBuiltinCharacters, registerCustomCharacter } from '@/src/data/characters';
-import { DynamicCharacterImage } from '@/src/lib/dynamicImageService';
+import { DynamicCharacterImage, getResolvedCharacterImage } from '@/src/lib/dynamicImageService';
 import { Character } from '@/src/types/character';
 
 const getRecentQueriesKey = (userId?: string | null) =>
@@ -399,7 +400,8 @@ function useRecentCharacters(user: any, token: string | null) {
               avatarUrl:
                 found?.avatarUrl ||
                 cv.characterAvatar ||
-                'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
+                getResolvedCharacterImage(cv.characterName) ||
+                '',
             });
           }
         }
@@ -772,14 +774,14 @@ export default function SearchScreen() {
       series: cand.series,
       role: cand.role,
       shortDescription: cand.shortDescription || cand.description?.slice(0, 100) || '',
-      description: cand.description || '',
+      description: cand.description || `Iconic character ${cand.name}.`,
       category: 'custom',
-      personality: cand.personality || ['Witty', 'Intelligent'],
-      roleplayRules: 'Respond in full character with authentic voice, charisma and lore.',
-      greeting: cand.greeting || 'Greetings.',
+      personality: cand.personality || ['Witty', 'Intelligent', 'Authentic'],
+      roleplayRules: 'Respond in full canon character with emotional range, depth, and distinct wit.',
+      greeting: cand.greeting || `*turns and regards you with genuine interest* Hello. What is on your mind today?`,
       avatarUrl: cand.avatarUrl,
       coverUrl: cand.coverUrl,
-      accent: '#FFFFFF',
+      accent: '#0A84FF',
       isOnline: true,
       starters: ['Tell me about your world.', 'What is your greatest secret?'],
       isCustom: true,
@@ -794,7 +796,28 @@ export default function SearchScreen() {
     });
     router.back();
     setTimeout(() => router.push(`/chat/${charId}`), 50);
-    saveCustomCharacter(newChar, token).catch(() => {});
+
+    // Dynamic AI Persona Fetch: uses Azure OpenAI to build rich canon lore in background
+    generateCharacterWithAI(cand.name, cand.series, cand.avatarUrl)
+      .then((rich) => {
+        if (rich) {
+          const enriched: Character = {
+            ...newChar,
+            role: rich.role || newChar.role,
+            shortDescription: rich.shortDescription || newChar.shortDescription,
+            description: rich.description || newChar.description,
+            personality: Array.isArray(rich.personality) && rich.personality.length > 0 ? rich.personality : newChar.personality,
+            roleplayRules: rich.roleplayRules || newChar.roleplayRules,
+            greeting: rich.greeting || newChar.greeting,
+            starters: Array.isArray(rich.starters) && rich.starters.length > 0 ? rich.starters : newChar.starters,
+            avatarUrl: cand.avatarUrl || rich.avatarUrl || newChar.avatarUrl,
+            coverUrl: cand.avatarUrl || rich.coverUrl || newChar.coverUrl,
+          };
+          registerCustomCharacter(enriched);
+          saveCustomCharacter(enriched, token).catch(() => {});
+        }
+      })
+      .catch(() => {});
   };
 
   const handleSelectLiveResult = (item: LiveInstantResult) => {
@@ -815,9 +838,9 @@ export default function SearchScreen() {
       series: item.series || 'Famous Universe',
       role: item.role || 'Iconic Figure',
       shortDescription: item.description?.slice(0, 100) || item.role,
-      description: item.description || `Iconic character ${item.name}. Ready to talk with authentic voice and lore.`,
+      description: item.description || `Iconic character ${item.name}.`,
       personality: ['Charismatic', 'Sharp', 'Authentic'],
-      greeting: `Hello! I am ${item.name}. What shall we talk about today?`,
+      greeting: `*observes you attentively with a distinct presence* Well now... what brings you into my world?`,
       avatarUrl: item.avatarUrl || '',
       coverUrl: item.avatarUrl || '',
     });
