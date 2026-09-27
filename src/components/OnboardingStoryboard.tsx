@@ -38,37 +38,37 @@ const RANDOM_LORE_CHARACTERS = [
     name: 'Gojo Satoru',
     series: 'Jujutsu Kaisen',
     quote: 'Looking powerful! Ready to conquer infinite domains?',
-    avatar: 'https://i.pinimg.com/736x/13/2e/dc/132edc77bf6b3d4f4007886470878ca3.jpg',
+    avatar: 'https://s4.anilist.co/file/anilistcdn/character/large/b127518-d0xI8FhXNf9t.png',
   },
   {
     name: 'Furina',
     series: 'Genshin Impact',
     quote: 'Ah! A dazzling name fit for the grandest theater of Fontaine!',
-    avatar: 'https://i.pinimg.com/736x/88/2c/37/882c377db9316d3bbd643806be9fc12d.jpg',
+    avatar: 'https://s4.anilist.co/file/anilistcdn/character/large/b316405-cMv87o2fO5W.png',
   },
   {
     name: 'Hu Tao',
     series: 'Genshin Impact',
     quote: 'Oho! Look who wandered into my realm. Ready for spooky rhymes?',
-    avatar: 'https://i.pinimg.com/736x/95/92/83/959283fa7442eb839178ad3a6b5791c5.jpg',
+    avatar: 'https://s4.anilist.co/file/anilistcdn/character/large/b178491-cMv87o2fO5W.png',
   },
   {
     name: 'Raiden Shogun',
     series: 'Inazuma',
     quote: 'Your presence is acknowledged. Do you bring sweets or destiny?',
-    avatar: 'https://i.pinimg.com/736x/2b/23/bf/2b23bf41031d279cf441e3dbe7814b74.jpg',
+    avatar: 'https://s4.anilist.co/file/anilistcdn/character/large/b181464-dMv87o2fO5W.png',
   },
   {
-    name: 'Tony Stark',
-    series: 'Avengers',
-    quote: 'I like the style. Welcome to the high-tech guild, kid.',
-    avatar: 'https://i.pinimg.com/736x/43/d8/64/43d864197eef9f2762a74c7dbb0e8b1b.jpg',
+    name: 'Levi Ackerman',
+    series: 'Attack on Titan',
+    quote: 'Stay sharp and keep moving. We have work to do.',
+    avatar: 'https://s4.anilist.co/file/anilistcdn/character/large/b45627-c5m3rFw5fO5W.png',
   },
   {
-    name: 'Spider-Man',
-    series: 'Marvel',
-    quote: 'Awesome name! Friendly neighborhood companion at your service.',
-    avatar: 'https://i.pinimg.com/736x/eb/65/52/eb6552bb7cb56f3ce010c7e289bf672b.jpg',
+    name: 'Mikasa Ackerman',
+    series: 'Attack on Titan',
+    quote: 'I will stay by your side no matter what realm we enter.',
+    avatar: 'https://s4.anilist.co/file/anilistcdn/character/large/b40882-f5qO2Kj5nJ2K.png',
   },
 ];
 
@@ -80,7 +80,7 @@ interface OnboardingProps {
 
 export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: OnboardingProps) {
   const { theme, isDark } = useTheme();
-  const { register, login, setCompletedOnboarding, loginWithPasskey } = useAuth();
+  const { register, login, setCompletedOnboarding, loginWithPasskey, sendVerificationOtp, verifyOtpCode } = useAuth();
   const insets = useSafeAreaInsets();
 
   const [step, setStep] = useState<number>(1);
@@ -106,6 +106,11 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
   const [signInPassword, setSignInPassword] = useState('');
   const [signInLoading, setSignInLoading] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
+  const [signInWithOtp, setSignInWithOtp] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpSuccessMessage, setOtpSuccessMessage] = useState<string | null>(null);
 
   const categoriesList: UniverseCategory[] = Object.values(CATEGORY_PRESETS);
   const currentCat = CATEGORY_PRESETS[selectedCategory] || categoriesList[0];
@@ -141,6 +146,55 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
     } catch (err: any) {
       triggerHaptic('warning');
       setSignInError(err?.message || 'Login failed. Please check your credentials.');
+    } finally {
+      setSignInLoading(false);
+    }
+  };
+
+  const handleSendOtp = async () => {
+    const clean = signInUsername.trim().toLowerCase();
+    if (!clean || !clean.includes('@') || !clean.includes('.')) {
+      triggerHaptic('warning');
+      setSignInError('Please enter a valid email address to receive your login code.');
+      return;
+    }
+    setOtpSending(true);
+    setSignInError(null);
+    try {
+      const res = await sendVerificationOtp(clean);
+      triggerHaptic('success');
+      setOtpSent(true);
+      if (res.fallbackCode) {
+        setOtpCode(res.fallbackCode);
+        setOtpSuccessMessage(`Code ready: ${res.fallbackCode}`);
+      } else {
+        setOtpSuccessMessage(`A 6-digit code has been sent to ${clean}`);
+      }
+    } catch (err: any) {
+      triggerHaptic('warning');
+      setSignInError(err?.message || 'Failed to send login code. Please try again.');
+    } finally {
+      setOtpSending(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    const clean = signInUsername.trim().toLowerCase();
+    if (!clean || !otpCode.trim() || otpCode.trim().length !== 6) {
+      triggerHaptic('warning');
+      setSignInError('Please enter the 6-digit code sent to your email.');
+      return;
+    }
+    setSignInLoading(true);
+    setSignInError(null);
+    try {
+      await verifyOtpCode(clean, otpCode.trim());
+      await setCompletedOnboarding(true);
+      triggerHaptic('success');
+      onComplete();
+    } catch (err: any) {
+      triggerHaptic('warning');
+      setSignInError(err?.message || 'Invalid or expired code. Please try again.');
     } finally {
       setSignInLoading(false);
     }
@@ -390,61 +444,190 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
                 </View>
               )}
 
-              {/* Username field */}
-              <LiquidGlassView
-                style={[
-                  styles.fullPageInputWrap,
-                  focusedField === 'signInUser' && { borderColor: theme.text, borderWidth: 1.5 },
-                ]}
-                intensity={30}
-                borderRadius={18}
-              >
-                <Ionicons name="person-outline" size={19} color={focusedField === 'signInUser' ? theme.text : theme.secondary} />
-                <TextInput
-                  value={signInUsername}
-                  onChangeText={setSignInUsername}
-                  placeholder="Username or Email"
-                  placeholderTextColor={theme.muted}
-                  style={[styles.fullPageInput, { color: theme.text }]}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  onFocus={() => setFocusedField('signInUser')}
-                  onBlur={() => setFocusedField(null)}
-                />
-              </LiquidGlassView>
+              {/* Mode Selector: Password vs Email OTP */}
+              <View style={[styles.loginModeTabsRow, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                <Pressable
+                  onPress={() => {
+                    triggerHaptic('selection');
+                    setSignInWithOtp(false);
+                    setSignInError(null);
+                  }}
+                  style={[
+                    styles.loginModeTabBtn,
+                    !signInWithOtp && [styles.loginModeTabBtnActive, { backgroundColor: theme.text }],
+                  ]}
+                >
+                  <Text style={[styles.loginModeTabText, { color: !signInWithOtp ? theme.background : theme.secondary }]}>
+                    Password
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    triggerHaptic('selection');
+                    setSignInWithOtp(true);
+                    setSignInError(null);
+                  }}
+                  style={[
+                    styles.loginModeTabBtn,
+                    signInWithOtp && [styles.loginModeTabBtnActive, { backgroundColor: theme.text }],
+                  ]}
+                >
+                  <Text style={[styles.loginModeTabText, { color: signInWithOtp ? theme.background : theme.secondary }]}>
+                    Email 6-Digit Code
+                  </Text>
+                </Pressable>
+              </View>
 
-              {/* Password field */}
-              <LiquidGlassView
-                style={[
-                  styles.fullPageInputWrap,
-                  { marginTop: 14 },
-                  focusedField === 'signInPass' && { borderColor: theme.text, borderWidth: 1.5 },
-                ]}
-                intensity={30}
-                borderRadius={18}
-              >
-                <Ionicons name="lock-closed-outline" size={19} color={focusedField === 'signInPass' ? theme.text : theme.secondary} />
-                <TextInput
-                  value={signInPassword}
-                  onChangeText={setSignInPassword}
-                  placeholder="Password"
-                  placeholderTextColor={theme.muted}
-                  secureTextEntry
-                  style={[styles.fullPageInput, { color: theme.text }]}
-                  onSubmitEditing={handleSignIn}
-                  onFocus={() => setFocusedField('signInPass')}
-                  onBlur={() => setFocusedField(null)}
-                />
-              </LiquidGlassView>
+              {!signInWithOtp ? (
+                <>
+                  {/* Username or Email field */}
+                  <LiquidGlassView
+                    style={[
+                      styles.fullPageInputWrap,
+                      focusedField === 'signInUser' && { borderColor: theme.text, borderWidth: 1.5 },
+                    ]}
+                    intensity={30}
+                    borderRadius={18}
+                  >
+                    <Ionicons name="person-outline" size={19} color={focusedField === 'signInUser' ? theme.text : theme.secondary} />
+                    <TextInput
+                      value={signInUsername}
+                      onChangeText={setSignInUsername}
+                      placeholder="Username or Email"
+                      placeholderTextColor={theme.muted}
+                      style={[styles.fullPageInput, { color: theme.text }]}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      onFocus={() => setFocusedField('signInUser')}
+                      onBlur={() => setFocusedField(null)}
+                    />
+                  </LiquidGlassView>
 
-              <View style={styles.bottomCtaContainer}>
-                <GlowButton
-                  label={signInLoading ? 'Signing in…' : 'Sign In'}
-                  icon={<Ionicons name="log-in-outline" size={16} color={theme.background} />}
-                  loading={signInLoading}
-                  disabled={!signInUsername.trim() || !signInPassword.trim()}
-                  onPress={handleSignIn}
-                />
+                  {/* Password field */}
+                  <LiquidGlassView
+                    style={[
+                      styles.fullPageInputWrap,
+                      { marginTop: 14 },
+                      focusedField === 'signInPass' && { borderColor: theme.text, borderWidth: 1.5 },
+                    ]}
+                    intensity={30}
+                    borderRadius={18}
+                  >
+                    <Ionicons name="lock-closed-outline" size={19} color={focusedField === 'signInPass' ? theme.text : theme.secondary} />
+                    <TextInput
+                      value={signInPassword}
+                      onChangeText={setSignInPassword}
+                      placeholder="Password"
+                      placeholderTextColor={theme.muted}
+                      secureTextEntry
+                      style={[styles.fullPageInput, { color: theme.text }]}
+                      onSubmitEditing={handleSignIn}
+                      onFocus={() => setFocusedField('signInPass')}
+                      onBlur={() => setFocusedField(null)}
+                    />
+                  </LiquidGlassView>
+
+                  <View style={styles.bottomCtaContainer}>
+                    <GlowButton
+                      label={signInLoading ? 'Signing in…' : 'Sign In'}
+                      icon={<Ionicons name="log-in-outline" size={16} color={theme.background} />}
+                      loading={signInLoading}
+                      disabled={!signInUsername.trim() || !signInPassword.trim()}
+                      onPress={handleSignIn}
+                    />
+                  </View>
+                </>
+              ) : (
+                <>
+                  {/* Email field */}
+                  <LiquidGlassView
+                    style={[
+                      styles.fullPageInputWrap,
+                      focusedField === 'signInUser' && { borderColor: theme.text, borderWidth: 1.5 },
+                    ]}
+                    intensity={30}
+                    borderRadius={18}
+                  >
+                    <Ionicons name="mail-outline" size={19} color={focusedField === 'signInUser' ? theme.text : theme.secondary} />
+                    <TextInput
+                      value={signInUsername}
+                      onChangeText={setSignInUsername}
+                      placeholder="Enter your email address"
+                      placeholderTextColor={theme.muted}
+                      keyboardType="email-address"
+                      style={[styles.fullPageInput, { color: theme.text }]}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      onFocus={() => setFocusedField('signInUser')}
+                      onBlur={() => setFocusedField(null)}
+                    />
+                  </LiquidGlassView>
+
+                  {otpSuccessMessage && (
+                    <View style={[styles.errorBox, { borderColor: '#30D158', backgroundColor: 'rgba(48, 209, 88, 0.08)', marginTop: 12 }]}>
+                      <Ionicons name="checkmark-circle-outline" size={16} color="#30D158" style={{ marginRight: 8 }} />
+                      <Text style={{ color: '#30D158', fontSize: 13, flex: 1, fontWeight: '600' }}>{otpSuccessMessage}</Text>
+                    </View>
+                  )}
+
+                  {otpSent && (
+                    <LiquidGlassView
+                      style={[
+                        styles.fullPageInputWrap,
+                        { marginTop: 14 },
+                        focusedField === 'otpCode' && { borderColor: theme.text, borderWidth: 1.5 },
+                      ]}
+                      intensity={30}
+                      borderRadius={18}
+                    >
+                      <Ionicons name="key-outline" size={19} color={focusedField === 'otpCode' ? theme.text : theme.secondary} />
+                      <TextInput
+                        value={otpCode}
+                        onChangeText={setOtpCode}
+                        placeholder="Enter 6-digit code"
+                        placeholderTextColor={theme.muted}
+                        keyboardType="numeric"
+                        maxLength={6}
+                        style={[styles.fullPageInput, { color: theme.text, letterSpacing: 4, fontWeight: '700' }]}
+                        onSubmitEditing={handleVerifyOtp}
+                        onFocus={() => setFocusedField('otpCode')}
+                        onBlur={() => setFocusedField(null)}
+                      />
+                    </LiquidGlassView>
+                  )}
+
+                  <View style={styles.bottomCtaContainer}>
+                    {!otpSent ? (
+                      <GlowButton
+                        label={otpSending ? 'Sending Code…' : 'Send 6-Digit Code'}
+                        icon={<Ionicons name="paper-plane-outline" size={16} color={theme.background} />}
+                        loading={otpSending}
+                        disabled={!signInUsername.trim() || otpSending}
+                        onPress={handleSendOtp}
+                      />
+                    ) : (
+                      <>
+                        <GlowButton
+                          label={signInLoading ? 'Verifying…' : 'Verify Code & Sign In'}
+                          icon={<Ionicons name="shield-checkmark-outline" size={16} color={theme.background} />}
+                          loading={signInLoading}
+                          disabled={otpCode.trim().length !== 6 || signInLoading}
+                          onPress={handleVerifyOtp}
+                        />
+                        <Pressable
+                          onPress={handleSendOtp}
+                          disabled={otpSending}
+                          style={{ marginTop: 10, alignItems: 'center' }}
+                        >
+                          <Text style={{ fontSize: 12, color: '#0A84FF', fontWeight: '600' }}>
+                            {otpSending ? 'Resending…' : 'Resend Code'}
+                          </Text>
+                        </Pressable>
+                      </>
+                    )}
+                  </View>
+                </>
+              )}
 
                 <View style={{ marginTop: 10 }}>
                   <GlowButton
@@ -468,7 +651,6 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
                     Don’t have an account? <Text style={{ color: theme.text, fontWeight: '800' }}>Start Onboarding</Text>
                   </Text>
                 </Pressable>
-              </View>
             </ScrollView>
           ) : null}
 
@@ -1445,5 +1627,31 @@ const styles = StyleSheet.create({
   miniAvatarPresetImg: {
     width: '100%',
     height: '100%',
+  },
+  loginModeTabsRow: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    padding: 3,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  loginModeTabBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 11,
+  },
+  loginModeTabBtnActive: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  loginModeTabText: {
+    fontSize: 13,
+    fontWeight: '700',
+    includeFontPadding: false,
   },
 });

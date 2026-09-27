@@ -45,9 +45,9 @@ const ARCHETYPE_RECOMMENDATIONS: ArchetypePreset[] = [
     label: '⚡ Tsundere Rival',
     icon: 'flash-outline',
     name: 'Seraphina Frost',
-    role: 'Prodigy Swordswoman & Unyielding Rival',
+    role: 'Prodigy Swordswoman & Rival',
     category: 'anime',
-    avatarUrl: 'https://i.pinimg.com/736x/88/2c/37/882c377db9316d3bbd643806be9fc12d.jpg',
+    avatarUrl: 'https://s4.anilist.co/file/anilistcdn/character/large/b238382-u3t9yR3q7z5T.png',
     personality: ['Tsundere', 'Sarcastic & Witty', 'Proud', 'Secretly Caring', 'Competitive'],
     greeting: 'Hmph! Don’t get the wrong idea—I only showed up because no one else in this guild could possibly match your stride. What are you looking at?',
     description: 'Seraphina is the top duelist of the Astral Academy. Despite her sharp tongue and feigned annoyance, she harbors immense loyalty and watches over her allies from the shadows.',
@@ -60,7 +60,7 @@ const ARCHETYPE_RECOMMENDATIONS: ArchetypePreset[] = [
     name: 'Kaelen Vance',
     role: 'Sovereign of the Nether Legion',
     category: 'warrior',
-    avatarUrl: 'https://i.pinimg.com/736x/13/2e/dc/132edc77bf6b3d4f4007886470878ca3.jpg',
+    avatarUrl: 'https://images.unsplash.com/photo-1563089145-599997674d42?w=800&auto=format&fit=crop&q=85',
     personality: ['Stoic', 'Dominant', 'Tactical Genius', 'Unshakable', 'Loyal'],
     greeting: 'The shadows whispered of your approach. Step forward into my court. State your purpose, or be swept into the dark.',
     description: 'Kaelen governs the fallen realms with silent absolute authority. Cold and measured, he values strength of will and respects only those who face terror without flinching.',
@@ -73,7 +73,7 @@ const ARCHETYPE_RECOMMENDATIONS: ArchetypePreset[] = [
     name: 'Lyra Celestia',
     role: 'Sanctuary Priestess of Starlight',
     category: 'celestial',
-    avatarUrl: 'https://i.pinimg.com/736x/2b/23/bf/2b23bf41031d279cf441e3dbe7814b74.jpg',
+    avatarUrl: 'https://s4.anilist.co/file/anilistcdn/character/large/b316493-27VlJqHh0PzM.png',
     personality: ['Gentle & Warm', 'Empathetic', 'Wise', 'Comforting', 'Playful'],
     greeting: 'Welcome back, weary traveler. Come, sit by the starlight hearth. Let the burdens of your world melt away for a while.',
     description: 'Lyra is an immortal guardian of memories and starlight. Her gentle voice brings solace to troubled minds, weaving comfort and gentle wisdom into every encounter.',
@@ -86,21 +86,38 @@ const ARCHETYPE_RECOMMENDATIONS: ArchetypePreset[] = [
     name: 'Vex Nitro',
     role: 'Renegade Netrunner & Black-Market Hacker',
     category: 'gaming',
-    avatarUrl: 'https://i.pinimg.com/736x/95/92/83/959283fa7442eb839178ad3a6b5791c5.jpg',
+    avatarUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=85',
     personality: ['Tech Genius', 'Rebellious', 'Cheeky & Sarcastic', 'Fearless'],
     greeting: 'Neural jack secured, proxy scrambled. You’re lucky I answered—what megacorp data fortress are we burning to the ground tonight?',
     description: 'Vex lives on the neon edge of Neo-Shinjuku. With cybernetic oculars and an unrivaled breach protocol, she dismantles syndicate networks for fun and high-stakes bounties.',
     roleplayRules: 'Use sharp cyber-slang, irreverent sarcastic remarks, quick witty comebacks, and confident hacker swagger.',
   },
+  {
+    id: 'sorcerer',
+    label: '👁️ Sorcerer Supreme',
+    icon: 'sparkles-outline',
+    name: 'Kento Satoru',
+    role: 'Apex Sorcerer & Boundary Guardian',
+    category: 'anime',
+    avatarUrl: 'https://s4.anilist.co/file/anilistcdn/character/large/b127997-62kP2M3Xg5V1.png',
+    personality: ['Confident & Playful', 'Genius', 'Unbothered', 'Protective', 'Witty'],
+    greeting: '*lowers blindfold slightly with an amused smirk* Relax. You’re standing next to the strongest sorcerer in existence. What shall we conquer today?',
+    description: 'An untouchable powerhouse of boundless cursed energy. Despite his playful nonchalance, he defends the innocent with catastrophic precision.',
+    roleplayRules: 'Speak with effortless casual confidence, charismatic teasing, and playful banter. Never sound flustered.',
+  },
 ];
 
 const PRESET_AVATAR_CHOICES = [
-  'https://i.pinimg.com/736x/88/2c/37/882c377db9316d3bbd643806be9fc12d.jpg',
-  'https://i.pinimg.com/736x/95/92/83/959283fa7442eb839178ad3a6b5791c5.jpg',
-  'https://i.pinimg.com/736x/2b/23/bf/2b23bf41031d279cf441e3dbe7814b74.jpg',
-  'https://i.pinimg.com/736x/13/2e/dc/132edc77bf6b3d4f4007886470878ca3.jpg',
-  'https://i.pinimg.com/736x/43/d8/64/43d864197eef9f2762a74c7dbb0e8b1b.jpg',
-  'https://i.pinimg.com/736x/eb/65/52/eb6552bb7cb56f3ce010c7e289bf672b.jpg',
+  'https://s4.anilist.co/file/anilistcdn/character/large/b316493-27VlJqHh0PzM.png', // Furina
+  'https://s4.anilist.co/file/anilistcdn/character/large/b127997-62kP2M3Xg5V1.png', // Gojo Satoru
+  'https://s4.anilist.co/file/anilistcdn/character/large/b238382-u3t9yR3q7z5T.png', // Hu Tao
+  'https://s4.anilist.co/file/anilistcdn/character/large/b237937-hW3kO3w9W7K1.png', // Raiden Shogun
+  'https://s4.anilist.co/file/anilistcdn/character/large/b137079-w4N0ZJg0V8oW.png', // Makima
+  'https://s4.anilist.co/file/anilistcdn/character/large/b45627-c1s6H53YyLq1.png',   // Levi Ackerman
+  'https://s4.anilist.co/file/anilistcdn/character/large/b40882-Lg04Y4lP6vYq.png',   // Mikasa Ackerman
+  'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&auto=format&fit=crop&q=85',
+  'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=85',
+  'https://images.unsplash.com/photo-1563089145-599997674d42?w=800&auto=format&fit=crop&q=85',
 ];
 
 const COMMON_TRAITS = [
@@ -166,6 +183,13 @@ export default function CreateCharacterScreen() {
     setGreeting(preset.greeting);
     setDescription(preset.description);
     setRoleplayRules(preset.roleplayRules);
+  };
+
+  // Surprise Me / Roll Random Character
+  const handleSurpriseMe = () => {
+    triggerHaptic('medium');
+    const randomIndex = Math.floor(Math.random() * ARCHETYPE_RECOMMENDATIONS.length);
+    handleSelectArchetype(ARCHETYPE_RECOMMENDATIONS[randomIndex]);
   };
 
   // Upload Custom Photo from Device Gallery
@@ -321,12 +345,87 @@ export default function CreateCharacterScreen() {
         >
           {/* Header */}
           <View style={styles.topHeader}>
-            <View>
-              <Text style={[styles.eyebrow, { color: theme.secondary }]}>AI COMPANION FORGE</Text>
-              <Text style={[styles.title, { color: theme.text }]}>Create Your Character</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.eyebrow, { color: '#8B5CF6' }]}>AI COMPANION FORGE</Text>
+              <Text style={[styles.title, { color: theme.text }]}>Create Character</Text>
               <Text style={[styles.subtitle, { color: theme.secondary }]}>
-                Upload your picture, craft custom lore & voice. Your companion will respond using your Azure AI keys!
+                Design unique lore, custom photo & voice. Powered by Azure AI.
               </Text>
+            </View>
+            <Pressable
+              onPress={handleSurpriseMe}
+              style={({ pressed }) => [
+                styles.surpriseRollBtn,
+                { opacity: pressed ? 0.85 : 1 },
+              ]}
+            >
+              <LinearGradient
+                colors={['#8B5CF6', '#EC4899']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.surpriseRollGradient}
+              >
+                <Ionicons name="dice" size={16} color="#FFFFFF" />
+                <Text style={styles.surpriseRollBtnText}>Surprise</Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+
+          {/* Interactive Live Character Card Preview */}
+          <View style={[styles.livePreviewCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
+            <View style={styles.livePreviewHeaderRow}>
+              <View style={styles.livePreviewBadge}>
+                <Ionicons name="eye-outline" size={12} color="#8B5CF6" />
+                <Text style={styles.livePreviewBadgeText}>LIVE CARD PREVIEW</Text>
+              </View>
+              <View style={styles.livePreviewStatus}>
+                <View style={[styles.livePreviewDot, { backgroundColor: '#34C759' }]} />
+                <Text style={[styles.livePreviewStatusText, { color: theme.secondary }]}>Active Companion</Text>
+              </View>
+            </View>
+
+            <View style={styles.livePreviewBody}>
+              <View style={styles.livePreviewAvatarWrap}>
+                <Image
+                  source={{ uri: avatarUrl }}
+                  style={styles.livePreviewAvatar}
+                  contentFit="cover"
+                />
+                <View style={styles.livePreviewCategoryBadge}>
+                  <Text style={styles.livePreviewCategoryText}>
+                    {category.toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.livePreviewDetails}>
+                <Text style={[styles.livePreviewName, { color: theme.text }]} numberOfLines={1}>
+                  {name.trim() || 'Companion Name'}
+                </Text>
+                <Text style={[styles.livePreviewRole, { color: theme.secondary }]} numberOfLines={1}>
+                  {role.trim() || 'Role & Title'}
+                </Text>
+
+                <View style={[styles.livePreviewQuoteBox, { backgroundColor: theme.surfaceSecondary }]}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={11} color="#8B5CF6" style={{ marginRight: 5, marginTop: 2 }} />
+                  <Text style={[styles.livePreviewQuoteText, { color: theme.text }]} numberOfLines={2}>
+                    {greeting.trim() || 'Tap below or choose an archetype to craft opening greeting lore…'}
+                  </Text>
+                </View>
+
+                {personality.length > 0 && (
+                  <View style={styles.livePreviewTraitsRow}>
+                    {personality.slice(0, 3).map((trait, tIdx) => (
+                      <View key={tIdx} style={[styles.livePreviewTraitChip, { borderColor: theme.border, backgroundColor: theme.surfaceSecondary }]}>
+                        <Text style={[styles.livePreviewTraitText, { color: theme.secondary }]}>{trait}</Text>
+                      </View>
+                    ))}
+                    {personality.length > 3 && (
+                      <Text style={[styles.livePreviewMoreTraits, { color: theme.muted }]}>+{personality.length - 3}</Text>
+                    )}
+                  </View>
+                )}
+              </View>
             </View>
           </View>
 
@@ -395,30 +494,45 @@ export default function CreateCharacterScreen() {
           {/* Smart Archetype Recommendations Section */}
           <View style={[styles.cardSolid, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
             <View style={styles.sectionHeaderRow}>
-              <Ionicons name="bulb-outline" size={17} color={theme.text} />
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>Smart Archetype Recommendations</Text>
+              <Ionicons name="sparkles" size={16} color="#8B5CF6" />
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Smart Archetype Presets</Text>
             </View>
             <Text style={[styles.sectionSub, { color: theme.secondary }]}>
-              Tap an archetype to auto-populate complete lore, greeting, and personality:
+              Tap an archetype to auto-populate complete lore, portrait, and personality:
             </Text>
 
-            <View style={styles.archetypesGrid}>
-              {ARCHETYPE_RECOMMENDATIONS.map((preset) => (
-                <Pressable
-                  key={preset.id}
-                  onPress={() => handleSelectArchetype(preset)}
-                  style={({ pressed }) => [
-                    styles.archetypeChip,
-                    {
-                      backgroundColor: theme.surfaceSecondary,
-                      borderColor: theme.border,
-                      opacity: pressed ? 0.8 : 1,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.archetypeChipText, { color: theme.text }]}>{preset.label}</Text>
-                </Pressable>
-              ))}
+            <View style={styles.archetypesColumn}>
+              {ARCHETYPE_RECOMMENDATIONS.map((preset) => {
+                const isSelected = name === preset.name;
+                return (
+                  <Pressable
+                    key={preset.id}
+                    onPress={() => handleSelectArchetype(preset)}
+                    style={({ pressed }) => [
+                      styles.archetypeCard,
+                      {
+                        backgroundColor: isSelected ? 'rgba(139, 92, 246, 0.12)' : theme.surfaceSecondary,
+                        borderColor: isSelected ? '#8B5CF6' : theme.border,
+                        borderWidth: isSelected ? 1.5 : 1,
+                        opacity: pressed ? 0.85 : 1,
+                      },
+                    ]}
+                  >
+                    <Image source={{ uri: preset.avatarUrl }} style={styles.archetypeThumb} contentFit="cover" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.archetypeCardTitle, { color: theme.text }]}>{preset.label}</Text>
+                      <Text style={[styles.archetypeCardRole, { color: theme.secondary }]} numberOfLines={1}>
+                        {preset.role}
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={isSelected ? 'checkmark-circle' : 'chevron-forward'}
+                      size={18}
+                      color={isSelected ? '#8B5CF6' : theme.muted}
+                    />
+                  </Pressable>
+                );
+              })}
             </View>
           </View>
 
@@ -646,7 +760,162 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   topHeader: {
-    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 16,
+  },
+  surpriseRollBtn: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#8B5CF6',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  surpriseRollGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 6,
+    borderRadius: 16,
+  },
+  surpriseRollBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+
+  // Live Companion Card Preview
+  livePreviewCard: {
+    padding: 14,
+    borderRadius: 22,
+    borderWidth: 1,
+    marginBottom: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  livePreviewHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  livePreviewBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 8,
+    backgroundColor: 'rgba(139, 92, 246, 0.12)',
+  },
+  livePreviewBadgeText: {
+    color: '#8B5CF6',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  livePreviewStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  livePreviewDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#34C759',
+  },
+  livePreviewStatusText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+  },
+  livePreviewBody: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  livePreviewAvatarWrap: {
+    position: 'relative',
+    width: 86,
+    height: 114,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(0,0,0,0.06)',
+  },
+  livePreviewAvatar: {
+    width: '100%',
+    height: '100%',
+  },
+  livePreviewCategoryBadge: {
+    position: 'absolute',
+    bottom: 5,
+    left: 5,
+    right: 5,
+    backgroundColor: 'rgba(0,0,0,0.68)',
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  livePreviewCategoryText: {
+    color: '#FFFFFF',
+    fontSize: 8.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  livePreviewDetails: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  livePreviewName: {
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+  },
+  livePreviewRole: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 1,
+    marginBottom: 6,
+  },
+  livePreviewQuoteBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 8,
+    borderRadius: 10,
+    marginBottom: 6,
+  },
+  livePreviewQuoteText: {
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 15,
+    fontStyle: 'italic',
+  },
+  livePreviewTraitsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  livePreviewTraitChip: {
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  livePreviewTraitText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+  },
+  livePreviewMoreTraits: {
+    fontSize: 9.5,
+    fontWeight: '700',
   },
   eyebrow: {
     fontSize: 10,
@@ -774,20 +1043,30 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginBottom: 12,
   },
-  archetypesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  archetypesColumn: {
     gap: 8,
   },
-  archetypeChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
-    borderWidth: 1,
+  archetypeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 10,
+    borderRadius: 16,
   },
-  archetypeChipText: {
-    fontSize: 12,
-    fontWeight: '700',
+  archetypeThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.06)',
+  },
+  archetypeCardTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  archetypeCardRole: {
+    fontSize: 11.5,
+    fontWeight: '500',
+    marginTop: 1,
   },
   inputLabel: {
     fontSize: 13,

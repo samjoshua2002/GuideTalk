@@ -113,7 +113,7 @@ export default function TabsLayout() {
           elevation: 12,
           paddingBottom: 0,
           paddingHorizontal: 8,
-          overflow: 'hidden',
+          overflow: 'visible',
           ...({
             backdropFilter: Platform.OS === 'web' ? 'blur(20px) saturate(180%)' : undefined,
           } as any),
@@ -126,6 +126,8 @@ export default function TabsLayout() {
               style={[
                 StyleSheet.absoluteFill,
                 {
+                  borderRadius: 32,
+                  overflow: 'hidden',
                   backgroundColor: isDark
                     ? 'rgba(18, 14, 28, 0.72)'
                     : 'rgba(255, 255, 255, 0.82)',
@@ -140,8 +142,9 @@ export default function TabsLayout() {
           marginTop: -2,
         },
         tabBarItemStyle: {
-          height: 52,
+          height: 56,
           paddingVertical: 2,
+          overflow: 'visible',
         },
       }}
     >
@@ -240,19 +243,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   createButtonCenter: {
-    top: -10,
+    top: 0,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#EC4899',
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.45,
-    shadowRadius: 10,
+    shadowRadius: 8,
     elevation: 8,
   },
   createButtonGradient: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
   },

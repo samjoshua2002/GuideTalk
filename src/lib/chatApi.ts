@@ -145,7 +145,7 @@ async function findWorkingBaseUrl(): Promise<string | null> {
   return probePromise;
 }
 
-async function apiFetch(path: string, options: RequestInit = {}, customTimeout?: number): Promise<Response> {
+export async function apiFetch(path: string, options: RequestInit = {}, customTimeout?: number): Promise<Response> {
   const timeoutMs = getEndpointTimeout(path, customTimeout);
 
   // 1. If we already know the working base, use it directly with full AI timeout
@@ -1206,6 +1206,7 @@ export interface SendVerificationResult {
   expiresInMinutes: number;
   cooldownSeconds: number;
   message: string;
+  fallbackCode?: string;
 }
 
 export interface VerifyCodeResult {

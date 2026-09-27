@@ -38,8 +38,10 @@ function sendNativeSmtp({ to, subject, html, text }) {
 
     const timeout = setTimeout(() => {
       socket.destroy();
-      reject(new Error('SMTP connection timed out.'));
-    }, 15000);
+      const err = new Error('SMTP connection timed out after 4000ms. Outbound SMTP ports may be blocked by this host.');
+      err.blockedOnHost = true;
+      reject(err);
+    }, 4000);
 
     function cleanup() {
       clearTimeout(timeout);
@@ -48,6 +50,10 @@ function sendNativeSmtp({ to, subject, html, text }) {
 
     socket.on('error', (err) => {
       cleanup();
+      // Detect if host network blocks outbound SMTP (common on cloud free tiers like Render)
+      if (err.code === 'ETIMEDOUT' || err.code === 'ENETUNREACH' || err.code === 'ECONNREFUSED' || err.code === 'EHOSTUNREACH') {
+        err.blockedOnHost = true;
+      }
       reject(err);
     });
 

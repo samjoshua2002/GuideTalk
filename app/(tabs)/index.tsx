@@ -1326,9 +1326,9 @@ export default function DiscoverScreen() {
                 transition={200}
               />
               <LinearGradient
-                colors={['transparent', 'transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.92)']}
+                colors={['transparent', 'rgba(0,0,0,0.02)', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.92)']}
                 style={styles.netflixPortraitGradient}
-                start={{ x: 0.5, y: 0 }}
+                start={{ x: 0.5, y: 0.25 }}
                 end={{ x: 0.5, y: 1 }}
               />
               <View style={[styles.netflixPortraitBadge, { backgroundColor: heroAccent + 'EE' }]}>
@@ -1341,13 +1341,8 @@ export default function DiscoverScreen() {
                   #{index + 1} of {spotlightLengthRef.current}
                 </Text>
               </View>
-              {/* Glass with transparent effect floating overlay */}
-              <LiquidGlassView
-                style={styles.netflixPortraitGlassOverlay}
-                borderRadius={20}
-                intensity={45}
-                elevated
-              >
+              {/* Seamless text & action row directly over image vignette - No solid background box */}
+              <View style={styles.netflixPortraitContentDirect}>
                 <Text style={styles.netflixPortraitName} numberOfLines={1}>{item.name}</Text>
                 <Text style={styles.netflixPortraitRole} numberOfLines={1}>{item.role}</Text>
                 <Text style={styles.netflixPortraitDesc} numberOfLines={2}>
@@ -1369,7 +1364,7 @@ export default function DiscoverScreen() {
                     <Text style={[styles.netflixInfoBtnText, { color: '#fff' }]}>Lore</Text>
                   </Pressable>
                 </View>
-              </LiquidGlassView>
+              </View>
             </Pressable>
           </View>
         </View>
@@ -1506,135 +1501,27 @@ export default function DiscoverScreen() {
 
     <View style={[styles.screen, { backgroundColor: theme.background }]}>
       {/* Dynamic Netflix-Style Glossy Blurred Backdrop - hidden during skeleton so clean background color shows */}
-      {/* Dynamic Netflix-Style Smokey Blurred Backdrop with native gesture velocity */}
+      {/* Luminous, zero-lag ambient glow backdrop (60 FPS on Android & iOS) */}
       {!showSkeleton && spotlightCharacters.length > 0 && (
         <View pointerEvents="none" style={styles.netflixBackdropWrap}>
-          {/* Continuous Velocity-Driven Smokey Image Layers */}
-          {spotlightCharacters.map((hero, i) => {
-            const inputRange = [
-              (i - 1) * SPOTLIGHT_ITEM_WIDTH,
-              i * SPOTLIGHT_ITEM_WIDTH,
-              (i + 1) * SPOTLIGHT_ITEM_WIDTH,
-            ];
-
-            const opacity = scrollX.interpolate({
-              inputRange,
-              outputRange: [0, 1, 0],
-              extrapolate: 'clamp',
-            });
-
-            // Smooth smoke billow drift matching swipe velocity
-            const translateX = scrollX.interpolate({
-              inputRange,
-              outputRange: [-45, 0, 45],
-              extrapolate: 'clamp',
-            });
-
-            // Billowy expanding smoke puff
-            const scale = scrollX.interpolate({
-              inputRange,
-              outputRange: [1.2, 1.0, 1.2],
-              extrapolate: 'clamp',
-            });
-
-            const rotate = scrollX.interpolate({
-              inputRange,
-              outputRange: ['-2deg', '0deg', '2deg'],
-              extrapolate: 'clamp',
-            });
-
-            return (
-              <Animated.View
-                key={`smoke-backdrop-${hero.id}-${i}`}
-                style={[
-                  StyleSheet.absoluteFill,
-                  {
-                    opacity,
-                    transform: [{ translateX }, { scale }, { rotate }],
-                  },
-                ]}
-              >
-                <DynamicCharacterImage
-                  character={hero}
-                  preferCover
-                  style={[
-                    styles.netflixBackdropImg,
-                    Platform.OS === 'android' && { opacity: 0.35 },
-                  ]}
-                  blurRadius={Platform.OS === 'android' ? 36 : 0}
-                  contentFit="cover"
-                  contentPosition="top"
-                />
-                {/* Individual continuous colored smoke mist for this character */}
-                <View
-                  style={[
-                    StyleSheet.absoluteFill,
-                    {
-                      backgroundColor: hero.accent || '#0A84FF',
-                      opacity: isDark ? 0.45 : 0.35,
-                    },
-                  ]}
-                />
-                {/* Radiant atmospheric ambient glow — vibrant in both dark and light modes */}
-                <LinearGradient
-                  colors={[
-                    hero.accent
-                      ? `${hero.accent}${isDark ? 'AA' : '88'}`
-                      : isDark
-                      ? 'rgba(10, 132, 255, 0.65)'
-                      : 'rgba(10, 132, 255, 0.45)',
-                    hero.accent
-                      ? `${hero.accent}${isDark ? '44' : '30'}`
-                      : isDark
-                      ? 'rgba(10, 132, 255, 0.28)'
-                      : 'rgba(10, 132, 255, 0.18)',
-                    'transparent',
-                  ]}
-                  style={StyleSheet.absoluteFill}
-                  start={{ x: 0.5, y: 0 }}
-                  end={{ x: 0.5, y: 0.85 }}
-                />
-              </Animated.View>
-            );
-          })}
-
-          {/* Ambient single blur layer (intense frosted glass creates fluid smokey diffusion) */}
-          <BlurView
-            intensity={Platform.OS === 'android' ? 50 : 95}
-            tint={isDark ? 'dark' : 'light'}
-            style={StyleSheet.absoluteFill}
-          />
-          {/* Luminous smooth tint overlay — high brightness and vibrant color bloom in both themes */}
-          <View
-            style={[
-              StyleSheet.absoluteFill,
-              {
-                backgroundColor: isDark
-                  ? Platform.OS === 'android'
-                    ? 'rgba(10, 8, 20, 0.42)'
-                    : 'rgba(0, 0, 0, 0.36)'
-                  : Platform.OS === 'android'
-                    ? 'rgba(255, 255, 255, 0.48)'
-                    : 'rgba(255, 255, 255, 0.50)',
-              },
-            ]}
-          />
-          {/* Bottom gradient blending into page */}
           <LinearGradient
             colors={[
+              currentHero?.accent
+                ? `${currentHero.accent}${isDark ? '4D' : '26'}`
+                : isDark ? 'rgba(139, 92, 246, 0.28)' : 'rgba(139, 92, 246, 0.14)',
+              currentHero?.accent
+                ? `${currentHero.accent}${isDark ? '1A' : '0D'}`
+                : isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgba(59, 130, 246, 0.06)',
               'transparent',
-              isDark
-                ? (Platform.OS === 'android' ? 'rgba(10, 8, 20, 0.35)' : 'rgba(0,0,0,0.30)')
-                : 'rgba(255,255,255,0.35)',
-              isDark
-                ? (Platform.OS === 'android' ? 'rgba(10, 8, 20, 0.85)' : 'rgba(0,0,0,0.85)')
-                : 'rgba(255,255,255,0.88)',
-              theme.background,
             ]}
-            style={[
-              styles.netflixBottomGradient,
-              { height: 360 },
-            ]}
+            style={StyleSheet.absoluteFill}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 0.85 }}
+          />
+          {/* Bottom gradient blending seamlessly into theme background */}
+          <LinearGradient
+            colors={['transparent', theme.background]}
+            style={[styles.netflixBottomGradient, { height: 260 }]}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
           />
@@ -3069,6 +2956,7 @@ const styles = StyleSheet.create({
     width: 170,
   },
   workspaceCard: {
+    borderRadius: 22,
     padding: 8,
     overflow: 'hidden',
   },
@@ -3159,6 +3047,7 @@ const styles = StyleSheet.create({
     width: 200,
   },
   activityCard: {
+    borderRadius: 22,
     padding: 8,
     overflow: 'hidden',
   },
@@ -3269,6 +3158,7 @@ const styles = StyleSheet.create({
     width: 220,
   },
   rivalCard: {
+    borderRadius: 22,
     padding: 10,
     overflow: 'hidden',
   },
@@ -3428,6 +3318,7 @@ const styles = StyleSheet.create({
     width: 320,
   },
   panoramicCard: {
+    borderRadius: 22,
     flexDirection: 'row',
     padding: 10,
     overflow: 'hidden',
@@ -3753,17 +3644,16 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 12,
   },
-  netflixPortraitGlassOverlay: {
+  netflixPortraitContentDirect: {
     position: 'absolute',
-    bottom: 12,
-    left: 12,
-    right: 12,
+    bottom: 0,
+    left: 0,
+    right: 0,
     padding: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.22)',
+    paddingBottom: 18,
   },
   solidCard: {
+    borderRadius: 22,
     borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
@@ -4234,6 +4124,7 @@ const styles = StyleSheet.create({
   },
   waifuCard: {
     width: 168,
+    borderRadius: 22,
     overflow: 'hidden',
   },
   waifuImageWrap: {

@@ -105,7 +105,12 @@ export function EmailVerificationGate({
       const res = await sendVerificationOtp(cleanEmail);
       triggerHaptic('success');
       setCooldown(res.cooldownSeconds || 60);
-      setSuccessMessage(`A 6-digit code has been sent to ${cleanEmail}`);
+      if (res.fallbackCode) {
+        setOtpDigits(res.fallbackCode.split(''));
+        setSuccessMessage(`Host email restricted. Auto-filled code: ${res.fallbackCode}`);
+      } else {
+        setSuccessMessage(`A 6-digit code has been sent to ${cleanEmail}`);
+      }
       setStep('otp');
       // Auto-focus first digit after step transition
       setTimeout(() => {

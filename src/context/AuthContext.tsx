@@ -4,6 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import { UserProfile } from '@/src/types/character';
 import { env } from '@/src/config/env';
 import {
+  apiFetch,
   sendEmailVerificationCode,
   verifyEmailCode as apiVerifyEmailCode,
   fetchVerificationStatus,
@@ -32,7 +33,7 @@ interface AuthContextType {
     avatarUrl?: string
   ) => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
-  sendVerificationOtp: (email: string) => Promise<{ cooldownSeconds: number; expiresInMinutes: number; message: string }>;
+  sendVerificationOtp: (email: string) => Promise<{ cooldownSeconds: number; expiresInMinutes: number; message: string; fallbackCode?: string }>;
   verifyOtpCode: (email: string, code: string) => Promise<UserProfile>;
   registerPasskey: (deviceName?: string) => Promise<boolean>;
   loginWithPasskey: (usernameOrEmail?: string) => Promise<boolean>;
@@ -190,11 +191,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const login = async (username: string, password: string) => {
-    const res = await resilientFetch('/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    });
+    const res = await apiFetch(
+      '/auth/login',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      },
+      15000
+    );
     const data = await res.json();
     if (!res.ok) {
       throw new Error(data.error || 'Login failed.');
@@ -213,20 +218,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     workspaceCharacterIds?: string[],
     avatarUrl?: string
   ) => {
-    const res = await resilientFetch('/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username,
-        password,
-        name,
-        email,
-        age: age ? Number(age) : undefined,
-        language,
-        workspaceCharacterIds,
-        avatarUrl,
-      }),
-    });
+    const res = await apiFetch(
+      '/auth/register',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          password,
+          name,
+          email,
+          age: age ? Number(age) : undefined,
+          language,
+          workspaceCharacterIds,
+          avatarUrl,
+        }),
+      },
+      15000
+    );
     const data = await res.json();
     if (!res.ok) {
       throw new Error(data.error || 'Registration failed.');
@@ -266,14 +275,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 3. If authenticated with backend token, sync to server in background
     if (token) {
       try {
-        const res = await resilientFetch('/auth/profile', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
+        const res = await apiFetch(
+          '/auth/profile',
+          {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(updates),
           },
-          body: JSON.stringify(updates),
-        });
+          10000
+        );
         const data = await res.json();
         if (res.ok && data.user) {
           setUser(data.user);

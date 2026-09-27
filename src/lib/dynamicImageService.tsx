@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Image, ImageProps } from 'expo-image';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as SecureStore from 'expo-secure-store';
 import { fetchDynamicCharacterImage } from './chatApi';
 import { Character } from '../types/character';
@@ -531,14 +532,46 @@ export function DynamicCharacterImage({
 
   const { imageUri, onImageError } = useDynamicCharacterImage(resolvedChar, { preferCover });
   const finalUri = imageUri || sourceUri || defaultUri || '';
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const handleError = useCallback(
     (e: any) => {
+      setLoadFailed(true);
       onImageError();
       if (onError) onError(e);
     },
     [onImageError, onError]
   );
+
+  useEffect(() => {
+    setLoadFailed(false);
+  }, [finalUri]);
+
+  if (!finalUri || loadFailed) {
+    const rawName = resolvedChar?.name || characterName || 'Character';
+    const initials =
+      rawName
+        .trim()
+        .split(/\s+/)
+        .map((w) => w[0])
+        .slice(0, 2)
+        .join('')
+        .toUpperCase() || 'GT';
+
+    return (
+      <View style={[style, { overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }]}>
+        <LinearGradient
+          colors={['#8B5CF6', '#EC4899', '#3B82F6']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <Text style={{ color: '#FFFFFF', fontSize: 24, fontWeight: '900', letterSpacing: 0.5 }}>
+          {initials}
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <Image
