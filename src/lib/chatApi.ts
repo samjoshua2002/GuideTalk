@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import { env } from '@/src/config/env';
-import { Character } from '@/src/types/character';
+import { Character, UserProfile } from '@/src/types/character';
 
 export interface ChatApiMessage {
   role: 'user' | 'character';
@@ -1194,5 +1194,159 @@ export async function generateAiPushNotification({
   } catch {}
 
   return null;
+}
+
+// ----------------------------------------------------------------------
+// 10. PRODUCTION EMAIL VERIFICATION & PASSKEY APIS
+// ----------------------------------------------------------------------
+
+export interface SendVerificationResult {
+  success: boolean;
+  email: string;
+  expiresInMinutes: number;
+  cooldownSeconds: number;
+  message: string;
+}
+
+export interface VerifyCodeResult {
+  success: boolean;
+  message: string;
+  token?: string;
+  user?: UserProfile;
+}
+
+export async function sendEmailVerificationCode(
+  email: string,
+  name?: string,
+  token?: string | null
+): Promise<SendVerificationResult> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await apiFetch(
+    '/auth/send-verification',
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ email: email.trim().toLowerCase(), name: name?.trim() }),
+    },
+    8000
+  );
+  return await parseResponse<SendVerificationResult>(res);
+}
+
+export async function verifyEmailCode(
+  email: string,
+  code: string,
+  token?: string | null
+): Promise<VerifyCodeResult> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await apiFetch(
+    '/auth/verify-code',
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ email: email.trim().toLowerCase(), code: code.trim() }),
+    },
+    8000
+  );
+  return await parseResponse<VerifyCodeResult>(res);
+}
+
+export async function fetchVerificationStatus(token: string): Promise<{
+  isEmailVerified: boolean;
+  email: string;
+  emailVerifiedAt: string | null;
+  hasPasskey: boolean;
+}> {
+  const res = await apiFetch(
+    '/auth/verification-status',
+    {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+    5000
+  );
+  return await parseResponse(res);
+}
+
+export async function requestPasskeyRegisterChallenge(token: string): Promise<{
+  challenge: string;
+  rp: { name: string; id: string };
+  user: { id: string; name: string; displayName: string };
+}> {
+  const res = await apiFetch(
+    '/auth/passkey/register-challenge',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({}),
+    },
+    6000
+  );
+  return await parseResponse(res);
+}
+
+export async function registerPasskeyCredential(
+  params: {
+    challenge: string;
+    credentialId: string;
+    publicKey?: string;
+    deviceName?: string;
+    authenticatorType?: string;
+  },
+  token: string
+): Promise<{ success: boolean; message: string; passkey: any; user: UserProfile }> {
+  const res = await apiFetch(
+    '/auth/passkey/register-verify',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(params),
+    },
+    6000
+  );
+  return await parseResponse(res);
+}
+
+export async function requestPasskeyLoginChallenge(usernameOrEmail?: string): Promise<{
+  challenge: string;
+  rpId: string;
+}> {
+  const res = await apiFetch(
+    '/auth/passkey/login-challenge',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usernameOrEmail }),
+    },
+    6000
+  );
+  return await parseResponse(res);
+}
+
+export async function verifyPasskeyLogin(params: {
+  challenge: string;
+  credentialId?: string;
+  usernameOrEmail?: string;
+}): Promise<{ token: string; user: UserProfile; message: string }> {
+  const res = await apiFetch(
+    '/auth/passkey/login-verify',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    },
+    6000
+  );
+  return await parseResponse(res);
 }
 

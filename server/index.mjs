@@ -3,6 +3,7 @@ import process from 'node:process';
 import crypto from 'node:crypto';
 import dotenv from 'dotenv';
 import { MongoClient, ObjectId } from 'mongodb';
+import { sendVerificationEmail } from './mailer.mjs';
 
 dotenv.config({ path: 'server/.env' });
 dotenv.config({ path: '.env' });
@@ -35,12 +36,18 @@ const users = database.collection('users');
 const customCharacters = database.collection('characters');
 const conversations = database.collection('conversations');
 const storedMessages = database.collection('messages');
+const emailVerifications = database.collection('email_verifications');
+const webauthnChallenges = database.collection('webauthn_challenges');
 
 await users.createIndex({ username: 1 }, { unique: true, sparse: true });
+await users.createIndex({ email: 1 });
 await customCharacters.createIndex({ userId: 1, createdAt: -1 });
 await conversations.createIndex({ userId: 1, updatedAt: -1 });
 await conversations.createIndex({ deviceId: 1, updatedAt: -1 });
 await storedMessages.createIndex({ conversationId: 1, createdAt: 1 });
+await emailVerifications.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }).catch(() => {});
+await emailVerifications.createIndex({ email: 1 }).catch(() => {});
+await webauthnChallenges.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }).catch(() => {});
 
 console.log('Connected to MongoDB and initialized collections.');
 const recommendationCache = new Map();
@@ -82,6 +89,24 @@ function verifyToken(token) {
     return null;
   }
   return null;
+}
+
+function serializeUser(user) {
+  if (!user) return null;
+  return {
+    id: user._id ? user._id.toString() : user.id,
+    username: user.username,
+    name: user.name,
+    email: user.email || '',
+    isEmailVerified: Boolean(user.isEmailVerified),
+    emailVerifiedAt: user.emailVerifiedAt ? (user.emailVerifiedAt.toISOString ? user.emailVerifiedAt.toISOString() : user.emailVerifiedAt) : null,
+    hasPasskey: Boolean((user.passkeys && user.passkeys.length > 0) || user.hasPasskey),
+    avatarUrl: user.avatarUrl,
+    age: user.age,
+    language: user.language,
+    workspaceCharacterIds: user.workspaceCharacterIds || [],
+    favorites: user.favorites || [],
+  };
 }
 
 const sendJson = (response, status, body) => {
@@ -943,10 +968,45 @@ const server = http.createServer(async (request, response) => {
     return sendJson(response, 200, {
       status: 'healthy',
       service: 'GuildTalk Backend',
-      version: '1.0.5',
+      version: '1.0.8',
       uptime: Math.round(process.uptime()),
       timestamp: new Date().toISOString(),
     });
+  }
+
+  // Passkey / WebAuthn Association Endpoints (Apple & Android)
+  if (request.method === 'GET' && (pathname === '/.well-known/apple-app-site-association' || pathname === '/apple-app-site-association')) {
+    response.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    });
+    return response.end(JSON.stringify({
+      webcredentials: {
+        apps: ["com.samjoshua2002.guidetalk"]
+      }
+    }));
+  }
+
+  if (request.method === 'GET' && (pathname === '/.well-known/assetlinks.json' || pathname === '/assetlinks.json')) {
+    response.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    });
+    return response.end(JSON.stringify([
+      {
+        relation: [
+          "delegate_permission/common.handle_all_urls",
+          "delegate_permission/common.get_login_creds"
+        ],
+        target: {
+          namespace: "android_app",
+          package_name: "com.samjoshua2002.guidetalk",
+          sha256_cert_fingerprints: [
+            "FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C"
+          ]
+        }
+      }
+    ]));
   }
 
   // Extract auth token if provided
@@ -964,8 +1024,9 @@ const server = http.createServer(async (request, response) => {
         return sendJson(response, 400, { error: 'Username and password are required.' });
       }
       const cleanUsername = username.trim().toLowerCase();
+      const cleanEmail = (email || '').trim().toLowerCase();
       const existing = await users.findOne({
-        $or: [{ username: cleanUsername }, { email: (email || '').trim().toLowerCase() && email.trim().toLowerCase() }],
+        $or: [{ username: cleanUsername }, ...(cleanEmail ? [{ email: cleanEmail }] : [])],
       });
       if (existing) {
         // If account already exists with these credentials, log them in smoothly
@@ -980,16 +1041,7 @@ const server = http.createServer(async (request, response) => {
           const userToken = createToken(existing._id.toString());
           return sendJson(response, 200, {
             token: userToken,
-            user: {
-              id: existing._id.toString(),
-              username: existing.username,
-              name: existing.name,
-              avatarUrl: existing.avatarUrl,
-              age: existing.age,
-              language: existing.language,
-              workspaceCharacterIds: existing.workspaceCharacterIds || [],
-              favorites: existing.favorites || [],
-            },
+            user: serializeUser(existing),
           });
         }
         return sendJson(response, 409, { error: 'Username or email is already taken.' });
@@ -999,7 +1051,10 @@ const server = http.createServer(async (request, response) => {
       const now = new Date();
       const userDoc = {
         username: cleanUsername,
-        email: (email || '').trim().toLowerCase(),
+        email: cleanEmail,
+        isEmailVerified: false,
+        emailVerifiedAt: null,
+        passkeys: [],
         passwordHash: hash,
         salt,
         name: name?.trim() || cleanUsername,
@@ -1015,19 +1070,11 @@ const server = http.createServer(async (request, response) => {
       const result = await users.insertOne(userDoc);
       const userId = result.insertedId.toString();
       const userToken = createToken(userId);
+      userDoc._id = result.insertedId;
 
       return sendJson(response, 201, {
         token: userToken,
-        user: {
-          id: userId,
-          username: userDoc.username,
-          name: userDoc.name,
-          avatarUrl: userDoc.avatarUrl,
-          age: userDoc.age,
-          language: userDoc.language,
-          workspaceCharacterIds: userDoc.workspaceCharacterIds,
-          favorites: userDoc.favorites,
-        },
+        user: serializeUser(userDoc),
       });
     }
 
@@ -1040,6 +1087,7 @@ const server = http.createServer(async (request, response) => {
       if (updateData.name) fields.name = updateData.name.trim();
       if (updateData.age) fields.age = Number(updateData.age);
       if (updateData.language) fields.language = updateData.language.trim();
+      if (updateData.avatarUrl) fields.avatarUrl = updateData.avatarUrl.trim();
       if (Array.isArray(updateData.workspaceCharacterIds)) fields.workspaceCharacterIds = updateData.workspaceCharacterIds;
       if (Array.isArray(updateData.favorites)) fields.favorites = updateData.favorites;
       fields.updatedAt = new Date();
@@ -1047,16 +1095,7 @@ const server = http.createServer(async (request, response) => {
       await users.updateOne({ _id: new ObjectId(authenticatedUserId) }, { $set: fields });
       const updated = await users.findOne({ _id: new ObjectId(authenticatedUserId) });
       return sendJson(response, 200, {
-        user: {
-          id: updated._id.toString(),
-          username: updated.username,
-          name: updated.name,
-          avatarUrl: updated.avatarUrl,
-          age: updated.age,
-          language: updated.language,
-          workspaceCharacterIds: updated.workspaceCharacterIds || [],
-          favorites: updated.favorites || [],
-        },
+        user: serializeUser(updated),
       });
     }
 
@@ -1078,16 +1117,7 @@ const server = http.createServer(async (request, response) => {
       const userToken = createToken(userId);
       return sendJson(response, 200, {
         token: userToken,
-        user: {
-          id: userId,
-          username: user.username,
-          name: user.name,
-          avatarUrl: user.avatarUrl,
-          age: user.age,
-          language: user.language,
-          workspaceCharacterIds: user.workspaceCharacterIds || [],
-          favorites: user.favorites || [],
-        },
+        user: serializeUser(user),
       });
     }
 
@@ -1098,17 +1128,377 @@ const server = http.createServer(async (request, response) => {
       const user = await users.findOne({ _id: new ObjectId(authenticatedUserId) });
       if (!user) return sendJson(response, 404, { error: 'User profile not found.' });
       return sendJson(response, 200, {
+        user: serializeUser(user),
+      });
+    }
+
+    // ----------------------------------------------------------------------
+    // 1A. EMAIL VERIFICATION SYSTEM (GMAIL SMTP WITH PRODUCTION RESILIENCE)
+    // ----------------------------------------------------------------------
+    if (request.method === 'POST' && pathname === '/auth/send-verification') {
+      const { email, name } = await readBody(request);
+      const cleanEmail = (email || '').trim().toLowerCase();
+
+      if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+        return sendJson(response, 400, { error: 'Please provide a valid email address.' });
+      }
+
+      // Check if this email is already verified by ANOTHER account (duplicate email protection)
+      const duplicateUser = await users.findOne({
+        email: cleanEmail,
+        isEmailVerified: true,
+        ...(authenticatedUserId && isObjectId(authenticatedUserId)
+          ? { _id: { $ne: new ObjectId(authenticatedUserId) } }
+          : {}),
+      });
+
+      if (duplicateUser) {
+        return sendJson(response, 409, {
+          error: 'This email is already verified on another GuideTalk account. Please use a different email or log into that account.',
+          isDuplicate: true,
+        });
+      }
+
+      // Rate limit: 60-second cooldown per email
+      const existingReq = await emailVerifications.findOne({ email: cleanEmail });
+      if (existingReq?.sentAt) {
+        const elapsed = Math.floor((Date.now() - new Date(existingReq.sentAt).getTime()) / 1000);
+        if (elapsed < 60) {
+          const waitTime = 60 - elapsed;
+          return sendJson(response, 429, {
+            error: `Please wait ${waitTime} seconds before requesting a new code.`,
+            cooldownSeconds: waitTime,
+          });
+        }
+      }
+
+      // Generate cryptographically secure 6-digit OTP code
+      const code = crypto.randomInt(100000, 999999).toString();
+      const hashedCode = crypto.createHash('sha256').update(code).digest('hex');
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      let recipientName = name?.trim();
+      if (!recipientName && authenticatedUserId && isObjectId(authenticatedUserId)) {
+        const u = await users.findOne({ _id: new ObjectId(authenticatedUserId) });
+        recipientName = u?.name || u?.username;
+      }
+
+      await emailVerifications.updateOne(
+        { email: cleanEmail },
+        {
+          $set: {
+            email: cleanEmail,
+            userId: authenticatedUserId || null,
+            hashedCode,
+            attempts: 0,
+            sentAt: new Date(),
+            expiresAt,
+          },
+        },
+        { upsert: true }
+      );
+
+      try {
+        await sendVerificationEmail({ to: cleanEmail, code, name: recipientName });
+        return sendJson(response, 200, {
+          success: true,
+          email: cleanEmail,
+          expiresInMinutes: 10,
+          cooldownSeconds: 60,
+          message: `Verification code sent to ${cleanEmail}`,
+        });
+      } catch (mailErr) {
+        console.error('Failed to send verification email via Gmail SMTP:', mailErr);
+        return sendJson(response, 500, {
+          error: 'Unable to send verification code at this moment. Please check your email address or try again shortly.',
+        });
+      }
+    }
+
+    if (request.method === 'POST' && pathname === '/auth/verify-code') {
+      const { email, code } = await readBody(request);
+      const cleanEmail = (email || '').trim().toLowerCase();
+      const cleanCode = (code || '').toString().trim();
+
+      if (!cleanEmail || !cleanCode || cleanCode.length !== 6) {
+        return sendJson(response, 400, { error: 'Please enter a valid 6-digit verification code.' });
+      }
+
+      const record = await emailVerifications.findOne({ email: cleanEmail });
+      if (!record) {
+        return sendJson(response, 400, {
+          error: 'Verification code not found or has expired. Please request a new code.',
+        });
+      }
+
+      if (new Date() > new Date(record.expiresAt)) {
+        await emailVerifications.deleteOne({ _id: record._id });
+        return sendJson(response, 400, { error: 'Verification code has expired. Please request a new code.' });
+      }
+
+      if ((record.attempts || 0) >= 5) {
+        await emailVerifications.deleteOne({ _id: record._id });
+        return sendJson(response, 429, {
+          error: 'Too many incorrect attempts. For security reasons, please request a new verification code.',
+        });
+      }
+
+      const inputHash = crypto.createHash('sha256').update(cleanCode).digest('hex');
+      if (inputHash !== record.hashedCode) {
+        await emailVerifications.updateOne({ _id: record._id }, { $inc: { attempts: 1 } });
+        const remaining = 4 - (record.attempts || 0);
+        return sendJson(response, 400, {
+          error: `Invalid code. ${remaining > 0 ? `${remaining} attempts remaining.` : 'Code locked. Please request a new one.'}`,
+        });
+      }
+
+      // Verification passed! Consume record
+      await emailVerifications.deleteOne({ _id: record._id });
+
+      let userToReturn = null;
+      let userToken = null;
+      const now = new Date();
+
+      if (authenticatedUserId && isObjectId(authenticatedUserId)) {
+        // PRESERVE EXISTING USER: Update email on current user, preserve ID, chats, and custom characters
+        await users.updateOne(
+          { _id: new ObjectId(authenticatedUserId) },
+          {
+            $set: {
+              email: cleanEmail,
+              isEmailVerified: true,
+              emailVerifiedAt: now,
+              updatedAt: now,
+            },
+          }
+        );
+        userToReturn = await users.findOne({ _id: new ObjectId(authenticatedUserId) });
+        userToken = createToken(userToReturn._id.toString());
+      } else {
+        // If not authenticated, check if existing user matches this email
+        userToReturn = await users.findOne({ email: cleanEmail });
+        if (userToReturn) {
+          await users.updateOne(
+            { _id: userToReturn._id },
+            {
+              $set: {
+                isEmailVerified: true,
+                emailVerifiedAt: now,
+                updatedAt: now,
+              },
+            }
+          );
+          userToReturn = await users.findOne({ _id: userToReturn._id });
+          userToken = createToken(userToReturn._id.toString());
+        }
+      }
+
+      return sendJson(response, 200, {
+        success: true,
+        message: 'Email verified successfully!',
+        token: userToken,
+        user: serializeUser(userToReturn),
+      });
+    }
+
+    if (request.method === 'GET' && pathname === '/auth/verification-status') {
+      if (!authenticatedUserId || !isObjectId(authenticatedUserId)) {
+        return sendJson(response, 401, { error: 'Unauthorized.' });
+      }
+      const user = await users.findOne({ _id: new ObjectId(authenticatedUserId) });
+      if (!user) return sendJson(response, 404, { error: 'User profile not found.' });
+
+      return sendJson(response, 200, {
+        isEmailVerified: Boolean(user.isEmailVerified),
+        email: user.email || '',
+        emailVerifiedAt: user.emailVerifiedAt || null,
+        hasPasskey: Boolean((user.passkeys && user.passkeys.length > 0) || user.hasPasskey),
+      });
+    }
+
+    // ----------------------------------------------------------------------
+    // 1B. PASSKEY / WEBAUTHN / BIOMETRIC AUTHENTICATION
+    // ----------------------------------------------------------------------
+    if (request.method === 'POST' && pathname === '/auth/passkey/register-challenge') {
+      if (!authenticatedUserId || !isObjectId(authenticatedUserId)) {
+        return sendJson(response, 401, { error: 'Authentication required to create a passkey.' });
+      }
+      const user = await users.findOne({ _id: new ObjectId(authenticatedUserId) });
+      if (!user) return sendJson(response, 404, { error: 'User not found.' });
+
+      const challenge = crypto.randomBytes(32).toString('base64url');
+      await webauthnChallenges.updateOne(
+        { userId: authenticatedUserId },
+        {
+          $set: {
+            userId: authenticatedUserId,
+            challenge,
+            createdAt: new Date(),
+            expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+          },
+        },
+        { upsert: true }
+      );
+
+      return sendJson(response, 200, {
+        challenge,
+        rp: {
+          name: 'GuideTalk',
+          id: 'guidetalk.app',
+        },
         user: {
-          id: user._id.toString(),
-          username: user.username,
-          name: user.name,
-          avatarUrl: user.avatarUrl,
-          age: user.age,
-          language: user.language,
-          workspaceCharacterIds: user.workspaceCharacterIds || [],
-          favorites: user.favorites || [],
+          id: authenticatedUserId,
+          name: user.username,
+          displayName: user.name || user.username,
+        },
+        pubKeyCredParams: [
+          { type: 'public-key', alg: -7 },  // ES256
+          { type: 'public-key', alg: -257 }, // RS256
+        ],
+        timeout: 60000,
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform',
+          userVerification: 'required',
+          residentKey: 'preferred',
         },
       });
+    }
+
+    if (request.method === 'POST' && pathname === '/auth/passkey/register-verify') {
+      if (!authenticatedUserId || !isObjectId(authenticatedUserId)) {
+        return sendJson(response, 401, { error: 'Unauthorized.' });
+      }
+      const { challenge, credentialId, publicKey, deviceName, authenticatorType } = await readBody(request);
+      const storedChallenge = await webauthnChallenges.findOne({ userId: authenticatedUserId });
+      if (!storedChallenge || storedChallenge.challenge !== challenge) {
+        return sendJson(response, 400, { error: 'Passkey registration challenge expired or invalid.' });
+      }
+      await webauthnChallenges.deleteOne({ _id: storedChallenge._id });
+
+      const passkeyEntry = {
+        id: credentialId || crypto.randomBytes(16).toString('hex'),
+        publicKey: publicKey || '',
+        deviceName: deviceName || 'Device Biometrics',
+        authenticatorType: authenticatorType || 'platform',
+        createdAt: new Date(),
+        lastUsedAt: new Date(),
+      };
+
+      await users.updateOne(
+        { _id: new ObjectId(authenticatedUserId) },
+        {
+          $push: { passkeys: passkeyEntry },
+          $set: { hasPasskey: true, updatedAt: new Date() },
+        }
+      );
+
+      const updatedUser = await users.findOne({ _id: new ObjectId(authenticatedUserId) });
+      return sendJson(response, 200, {
+        success: true,
+        message: 'Passkey enrolled successfully!',
+        passkey: passkeyEntry,
+        user: serializeUser(updatedUser),
+      });
+    }
+
+    if (request.method === 'POST' && pathname === '/auth/passkey/login-challenge') {
+      const { usernameOrEmail } = await readBody(request);
+      let targetUserId = null;
+      if (usernameOrEmail) {
+        const clean = usernameOrEmail.trim().toLowerCase();
+        const u = await users.findOne({ $or: [{ username: clean }, { email: clean }] });
+        if (u) targetUserId = u._id.toString();
+      }
+
+      const challenge = crypto.randomBytes(32).toString('base64url');
+      await webauthnChallenges.insertOne({
+        userId: targetUserId,
+        challenge,
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      });
+
+      return sendJson(response, 200, {
+        challenge,
+        rpId: 'guidetalk.app',
+        timeout: 60000,
+        userVerification: 'required',
+      });
+    }
+
+    if (request.method === 'POST' && pathname === '/auth/passkey/login-verify') {
+      const { challenge, credentialId, usernameOrEmail } = await readBody(request);
+      const storedChallenge = await webauthnChallenges.findOne({ challenge });
+      if (!storedChallenge) {
+        return sendJson(response, 400, { error: 'Passkey challenge invalid or expired.' });
+      }
+      await webauthnChallenges.deleteOne({ _id: storedChallenge._id });
+
+      let user = null;
+      if (credentialId) {
+        user = await users.findOne({ 'passkeys.id': credentialId });
+      }
+      if (!user && (storedChallenge.userId || usernameOrEmail)) {
+        const query = storedChallenge.userId
+          ? { _id: new ObjectId(storedChallenge.userId) }
+          : { $or: [{ username: usernameOrEmail.trim().toLowerCase() }, { email: usernameOrEmail.trim().toLowerCase() }] };
+        user = await users.findOne(query);
+      }
+
+      if (!user) {
+        return sendJson(response, 404, { error: 'No user associated with this passkey credential.' });
+      }
+
+      if (credentialId) {
+        await users.updateOne(
+          { _id: user._id, 'passkeys.id': credentialId },
+          { $set: { 'passkeys.$.lastUsedAt': new Date(), updatedAt: new Date() } }
+        );
+      }
+
+      const userToken = createToken(user._id.toString());
+      return sendJson(response, 200, {
+        token: userToken,
+        user: serializeUser(user),
+        message: 'Passkey sign-in successful!',
+      });
+    }
+
+    if (request.method === 'GET' && pathname === '/auth/passkey/list') {
+      if (!authenticatedUserId || !isObjectId(authenticatedUserId)) {
+        return sendJson(response, 401, { error: 'Unauthorized.' });
+      }
+      const user = await users.findOne({ _id: new ObjectId(authenticatedUserId) });
+      const list = (user?.passkeys || []).map((pk) => ({
+        id: pk.id,
+        deviceName: pk.deviceName,
+        authenticatorType: pk.authenticatorType,
+        createdAt: pk.createdAt,
+        lastUsedAt: pk.lastUsedAt,
+      }));
+      return sendJson(response, 200, { passkeys: list });
+    }
+
+    if (request.method === 'POST' && pathname === '/auth/passkey/revoke') {
+      if (!authenticatedUserId || !isObjectId(authenticatedUserId)) {
+        return sendJson(response, 401, { error: 'Unauthorized.' });
+      }
+      const { credentialId } = await readBody(request);
+      if (!credentialId) return sendJson(response, 400, { error: 'credentialId is required.' });
+
+      await users.updateOne(
+        { _id: new ObjectId(authenticatedUserId) },
+        {
+          $pull: { passkeys: { id: credentialId } },
+          $set: { updatedAt: new Date() },
+        }
+      );
+
+      const user = await users.findOne({ _id: new ObjectId(authenticatedUserId) });
+      const hasPasskey = Boolean(user?.passkeys && user.passkeys.length > 0);
+      await users.updateOne({ _id: user._id }, { $set: { hasPasskey } });
+
+      return sendJson(response, 200, { success: true, message: 'Passkey revoked.' });
     }
 
 
@@ -2496,17 +2886,17 @@ const server = http.createServer(async (request, response) => {
     // ----------------------------------------------------------------------
     if (request.method === 'GET' && pathname === '/app/version') {
       return sendJson(response, 200, {
-        latestVersion: process.env.APP_LATEST_VERSION || '1.0.6',
-        latestVersionCode: Number(process.env.APP_LATEST_VERSION_CODE || 7),
+        latestVersion: process.env.APP_LATEST_VERSION || '1.0.8',
+        latestVersionCode: Number(process.env.APP_LATEST_VERSION_CODE || 9),
         apkUrl: process.env.APP_APK_URL || 'https://expo.dev/artifacts/eas/F47jYsqvnEJDj44OAIObDc0p1Emd4kMgH-k7OosN_vg.apk',
-        title: 'New GuideTalk Update Available! 🚀',
-        message: 'GuideTalk v1.0.6 brings smooth live OTA progress tracking, instant companion look stability, and proactive feed sync.',
+        title: 'GuideTalk v1.0.8: Security & Passkeys 🛡️',
+        message: 'Production Gmail account verification, Apple Face ID & Touch ID passkeys, and full-page Home updates.',
         releaseNotes: [
-          'Smooth Live OTA Progress: Visual progress tracking for instant over-the-air updates without full APK downloads',
-          'Authentic Character Looks: Verified portraits only with zero dummy or random image padding',
-          'Series Protagonist Resolution: Instant lead recognition (Patrick Jane for The Mentalist, Walter White, etc.)',
-          'Dynamic Home & Activity Sync: Instant hide/delete without screen desync or avatar flashing',
-          'System Notification Permission: Android status bar and lockscreen push notifications directly on app launch',
+          'Production Gmail Verification: 6-digit OTP verification powered by native Gmail SMTP with account preservation',
+          'Passkey & Biometrics: 1-tap login with Apple Face ID, Touch ID, and Android biometrics without passwords',
+          'Full-Page Home Updates: Discover new features with real-time progress and instant in-app reload',
+          'Character & Chat Preservation: Zero data loss during account migrations, preserving chats and custom characters',
+          'High-Definition Companion Art: Verified AniList character looks with alternate costume previews',
         ],
         forceUpdate: false,
       });

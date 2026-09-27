@@ -387,6 +387,22 @@ export function selectCharacterLook(
 }
 
 /**
+ * Adds a custom uploaded look to character's candidate pool and sets it as the active look.
+ */
+export function addCustomLookToCharacter(
+  char: Partial<Character> | { name: string; series?: string },
+  customUrl: string
+): void {
+  if (!char || !char.name || !customUrl) return;
+  const key = getCacheKey(char.name, char.series);
+  const existing = candidatesCache.get(key) || [];
+  if (!existing.includes(customUrl)) {
+    candidatesCache.set(key, [customUrl, ...existing]);
+  }
+  selectCharacterLook(char, customUrl);
+}
+
+/**
  * Hook to get a real dynamic character image with automatic fallback fetching.
  */
 export function useDynamicCharacterImage(

@@ -27,9 +27,13 @@ export interface UserProfile {
   username: string;
   name: string;
   email?: string;
+  isEmailVerified?: boolean;
+  emailVerifiedAt?: string;
+  hasPasskey?: boolean;
   age?: number | string;
   language?: string;
   workspaceCharacterIds?: string[];
   favorites?: string[];
   avatarUrl?: string;
 }
+

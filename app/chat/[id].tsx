@@ -35,7 +35,9 @@ import {
   cycleCharacterImage,
   getCharacterCandidateLooks,
   selectCharacterLook,
+  addCustomLookToCharacter,
 } from '@/src/lib/dynamicImageService';
+import { saveUserCreatedCharacter } from '@/src/lib/customCharacters';
 import {
   createConversation,
   getConversationMessages,
@@ -48,9 +50,9 @@ import {
   enrichCharacterProfileWithAI,
   StoredMessage,
 } from '@/src/lib/chatApi';
-import { LiquidGlassView } from '@/src/components/LiquidGlassView';
 import { VoiceWaveformBar } from '@/src/components/VoiceWaveformBar';
 import { VoiceMessageBubble } from '@/src/components/VoiceMessageBubble';
+import { EmailVerificationGate } from '@/src/components/EmailVerificationGate';
 import { requestRecordingPermissionsAsync } from 'expo-audio';
 import { triggerHaptic } from '@/src/lib/haptics';
 import {
@@ -220,11 +222,24 @@ export default function ChatScreen() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>('gpt-5.6-luna');
   const [showModelMenu, setShowModelMenu] = useState<boolean>(false);
+  const [verificationGateVisible, setVerificationGateVisible] = useState<boolean>(false);
+
+  // Gated chatting: require email verification for registered accounts
+  useEffect(() => {
+    if (user && user.id !== 'guest' && user.isEmailVerified === false) {
+      const timer = setTimeout(() => {
+        setVerificationGateVisible(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [user?.id, user?.isEmailVerified]);
 
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState<string>('');
   const [isRegenerating, setIsRegenerating] = useState<boolean>(false);
   const [availableLooks, setAvailableLooks] = useState<string[]>([]);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState<boolean>(false);
+  const [photoUpdatedBanner, setPhotoUpdatedBanner] = useState<boolean>(false);
 
   // Long press context menu
   const [contextMenu, setContextMenu] = useState<{ visible: boolean; message: Message | null }>({
@@ -375,6 +390,64 @@ export default function ChatScreen() {
     triggerHaptic('medium');
     selectCharacterLook(character, lookUrl);
     setCharacter((prev: Character | null) => (prev ? { ...prev, avatarUrl: lookUrl, coverUrl: lookUrl } : null));
+  };
+
+  const handleUploadCharacterPhoto = async () => {
+    if (!character) return;
+    try {
+      triggerHaptic('light');
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Photo Permission Needed',
+          'Please allow photo gallery access in device settings to upload a custom avatar for this companion.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.9,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]?.uri) {
+        setIsUploadingPhoto(true);
+        triggerHaptic('medium');
+        const customUri = result.assets[0].uri;
+
+        // 1. Add to cache & candidate pool, make active
+        addCustomLookToCharacter(character, customUri);
+
+        // 2. Update local character state
+        const updatedChar: Character = {
+          ...character,
+          avatarUrl: customUri,
+          coverUrl: customUri,
+        };
+        setCharacter(updatedChar);
+
+        // 3. Prepend to candidate looks
+        setAvailableLooks((prev) => [customUri, ...prev.filter((u) => u !== customUri)]);
+
+        // 4. If custom character, persist to customCharacters store and backend
+        if (character.isCustom) {
+          saveUserCreatedCharacter(updatedChar, token).catch((e) =>
+            console.warn('Failed to persist custom character avatar update:', e)
+          );
+        }
+
+        triggerHaptic('success');
+        setPhotoUpdatedBanner(true);
+        setTimeout(() => setPhotoUpdatedBanner(false), 3000);
+      }
+    } catch (err: any) {
+      console.warn('Character photo upload error:', err);
+      Alert.alert('Upload Error', 'Failed to pick photo. Please try again.');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
   };
 
   const handleRandomizeImage = async () => {
@@ -660,6 +733,12 @@ export default function ChatScreen() {
   ) => {
     const trimmed = textToSend.trim();
     if ((!trimmed && !photoToSend && !audioUriToSend) || isSending || !character) return;
+
+    // Gated chatting: require email verification for accounts
+    if (user && user.id !== 'guest' && !user.isEmailVerified) {
+      setVerificationGateVisible(true);
+      return;
+    }
 
     setError(null);
     setInput('');
@@ -970,8 +1049,8 @@ export default function ChatScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
-        {/* iOS Liquid Glass Header */}
-        <LiquidGlassView style={styles.header} borderRadius={0} intensity={35}>
+        {/* Minimalist Solid Header */}
+        <View style={[styles.header, { backgroundColor: theme.background, borderBottomColor: theme.border }]}>
           <Pressable
             hitSlop={12}
             onPress={() => {
@@ -1040,7 +1119,7 @@ export default function ChatScreen() {
               <Ionicons name="ellipsis-horizontal" size={18} color={theme.text} />
             </Pressable>
           </View>
-        </LiquidGlassView>
+        </View>
 
         {/* ============================================================ */}
         {/* FULL SCREEN PROFILE & CHAT SETTINGS MODAL                   */}
@@ -1102,21 +1181,45 @@ export default function ChatScreen() {
                     style={styles.modalHeroGradient}
                   />
                   
-                  {/* Randomize Image Button */}
-                  <Pressable
-                    onPress={handleRandomizeImage}
-                    disabled={isResolvingImage}
-                    style={styles.randomizeImgBtn}
-                  >
-                    {isResolvingImage ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Ionicons name="color-wand-outline" size={14} color="#fff" />
-                    )}
-                    <Text style={styles.randomizeImgText}>Change Look</Text>
-                  </Pressable>
+                  {/* Top-Right Hero Action Buttons */}
+                  <View style={styles.heroTopActionsRow}>
+                    <Pressable
+                      onPress={handleUploadCharacterPhoto}
+                      disabled={isUploadingPhoto}
+                      style={styles.heroUploadPill}
+                    >
+                      {isUploadingPhoto ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Ionicons name="camera-outline" size={13} color="#FFFFFF" />
+                      )}
+                      <Text style={styles.heroActionPillText}>
+                        {isUploadingPhoto ? 'Uploading…' : 'Upload Photo'}
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={handleRandomizeImage}
+                      disabled={isResolvingImage}
+                      style={styles.heroCyclePill}
+                    >
+                      {isResolvingImage ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Ionicons name="shuffle-outline" size={13} color="#FFFFFF" />
+                      )}
+                      <Text style={styles.heroActionPillText}>Cycle Look</Text>
+                    </Pressable>
+                  </View>
+
                   <View style={styles.modalHeroInfo}>
-                    <View style={styles.modalHeroAvatarWrap}>
+                    <Pressable
+                      onPress={handleUploadCharacterPhoto}
+                      disabled={isUploadingPhoto}
+                      style={styles.modalHeroAvatarWrap}
+                      hitSlop={6}
+                      accessibilityLabel="Upload companion photo"
+                    >
                       <DynamicCharacterImage
                         character={character}
                         style={styles.modalHeroAvatar}
@@ -1124,8 +1227,22 @@ export default function ChatScreen() {
                         contentPosition="top"
                         transition={200}
                       />
-                      <View style={[styles.modalOnlineDot, { backgroundColor: '#34C759' }]} />
-                    </View>
+                      <View
+                        style={[
+                          styles.avatarCameraActionBadge,
+                          {
+                            backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+                            borderColor: isDark ? '#2C2C2E' : '#E5E5EA',
+                          },
+                        ]}
+                      >
+                        {isUploadingPhoto ? (
+                          <ActivityIndicator size="small" color={theme.text} />
+                        ) : (
+                          <Ionicons name="camera" size={13} color={theme.text} />
+                        )}
+                      </View>
+                    </Pressable>
                     <Text style={[styles.modalCharName, { color: theme.text }]}>{character.name}</Text>
                     <Text style={[styles.modalCharRole, { color: theme.secondary }]}>
                       {character.role} · {character.series || 'Guild Universe'}
@@ -1150,76 +1267,106 @@ export default function ChatScreen() {
                   </View>
                 </View>
 
-                {/* SECTION: CHARACTER LOOKS & OUTFITS */}
-                {availableLooks.length > 0 && (
-                  <View style={{ marginBottom: 20 }}>
-                    <View style={styles.speechSectionHeaderRow}>
-                      <Text style={[styles.modalSectionLabel, { color: theme.secondary, marginBottom: 0 }]}>
-                        CHARACTER LOOKS ({availableLooks.length})
-                      </Text>
-                      <Pressable
-                        onPress={handleRandomizeImage}
-                        disabled={isResolvingImage}
-                        hitSlop={6}
-                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                      >
-                        <Ionicons name="shuffle" size={13} color="#007AFF" />
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#007AFF' }}>Cycle Next</Text>
-                      </Pressable>
-                    </View>
-                    <LiquidGlassView style={[styles.modalCard, { paddingVertical: 12, paddingHorizontal: 12 }]} borderRadius={20} intensity={30} elevated>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
-                        {availableLooks.map((lookUri, idx) => {
-                          const isCurrent = character.avatarUrl === lookUri || character.coverUrl === lookUri;
-                          return (
-                            <Pressable
-                              key={lookUri + idx}
-                              onPress={() => handleSelectLook(lookUri)}
-                              style={{
-                                width: 72,
-                                height: 96,
-                                borderRadius: 14,
-                                overflow: 'hidden',
-                                borderWidth: isCurrent ? 2.5 : 1,
-                                borderColor: isCurrent ? '#007AFF' : theme.border,
-                                position: 'relative',
-                                backgroundColor: theme.surfaceSecondary,
-                              }}
-                            >
-                              <Image
-                                source={{ uri: lookUri }}
-                                style={{ width: '100%', height: '100%' }}
-                                contentFit="cover"
-                                contentPosition="top"
-                              />
-                              {isCurrent && (
-                                <View
-                                  style={{
-                                    position: 'absolute',
-                                    top: 4,
-                                    right: 4,
-                                    backgroundColor: '#007AFF',
-                                    borderRadius: 10,
-                                    width: 18,
-                                    height: 18,
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                  }}
-                                >
-                                  <Ionicons name="checkmark" size={12} color="#fff" />
-                                </View>
-                              )}
-                            </Pressable>
-                          );
-                        })}
-                      </ScrollView>
-                    </LiquidGlassView>
+                {/* SECTION: COMPANION AVATAR & LOOKS */}
+                <View style={{ marginBottom: 20 }}>
+                  <View style={styles.speechSectionHeaderRow}>
+                    <Text style={[styles.modalSectionLabel, { color: theme.secondary, marginBottom: 0 }]}>
+                      COMPANION AVATAR & LOOKS
+                    </Text>
+                    <Pressable
+                      onPress={handleUploadCharacterPhoto}
+                      disabled={isUploadingPhoto}
+                      hitSlop={6}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                    >
+                      <Ionicons name="add-circle-outline" size={13} color="#007AFF" />
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#007AFF' }}>Upload Custom</Text>
+                    </Pressable>
                   </View>
-                )}
+
+                  {photoUpdatedBanner && (
+                    <View style={styles.photoSuccessPill}>
+                      <Ionicons name="checkmark-circle" size={13} color="#34C759" />
+                      <Text style={styles.photoSuccessText}>Companion avatar updated!</Text>
+                    </View>
+                  )}
+
+                  <View style={[styles.modalCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border, borderWidth: 1, paddingVertical: 12, paddingHorizontal: 12 }]}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
+                      {/* Upload Card: Always First */}
+                      <Pressable
+                        onPress={handleUploadCharacterPhoto}
+                        disabled={isUploadingPhoto}
+                        style={[
+                          styles.uploadLookCard,
+                          {
+                            backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                            borderColor: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)',
+                          },
+                        ]}
+                      >
+                        <View style={[styles.uploadLookIconWrap, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' }]}>
+                          {isUploadingPhoto ? (
+                            <ActivityIndicator size="small" color={theme.text} />
+                          ) : (
+                            <Ionicons name="camera-outline" size={19} color={theme.text} />
+                          )}
+                        </View>
+                        <Text style={[styles.uploadLookText, { color: theme.text }]}>Upload</Text>
+                        <Text style={[styles.uploadLookSubtext, { color: theme.secondary }]}>Custom</Text>
+                      </Pressable>
+
+                      {/* Candidate / Custom Looks */}
+                      {availableLooks.map((lookUri, idx) => {
+                        const isCurrent = character.avatarUrl === lookUri || character.coverUrl === lookUri;
+                        return (
+                          <Pressable
+                            key={lookUri + idx}
+                            onPress={() => handleSelectLook(lookUri)}
+                            style={{
+                              width: 72,
+                              height: 96,
+                              borderRadius: 14,
+                              overflow: 'hidden',
+                              borderWidth: isCurrent ? 2.5 : 1,
+                              borderColor: isCurrent ? '#007AFF' : theme.border,
+                              position: 'relative',
+                              backgroundColor: theme.surfaceSecondary,
+                            }}
+                          >
+                            <Image
+                              source={{ uri: lookUri }}
+                              style={{ width: '100%', height: '100%' }}
+                              contentFit="cover"
+                              contentPosition="top"
+                            />
+                            {isCurrent && (
+                              <View
+                                style={{
+                                  position: 'absolute',
+                                  top: 4,
+                                  right: 4,
+                                  backgroundColor: '#007AFF',
+                                  borderRadius: 10,
+                                  width: 18,
+                                  height: 18,
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                <Ionicons name="checkmark" size={12} color="#fff" />
+                              </View>
+                            )}
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                </View>
 
                 {/* SECTION 1: ABOUT THE CHAT */}
                 <Text style={[styles.modalSectionLabel, { color: theme.secondary }]}>ABOUT THE CHAT</Text>
-                <LiquidGlassView style={styles.modalCard} borderRadius={20} intensity={30} elevated>
+                <View style={[styles.modalCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border, borderWidth: 1 }]}>
                   <Text style={[styles.modalLoreText, { color: theme.text }]}>
                     {character.description || character.shortDescription || 'An intelligent AI companion crafted for deep storytelling and immersive conversation.'}
                   </Text>
@@ -1236,7 +1383,7 @@ export default function ChatScreen() {
                       </Text>
                     </View>
                   ) : null}
-                </LiquidGlassView>
+                </View>
 
                 {/* SECTION 2: CUSTOMIZE SPEAKING STYLE & VOICE */}
                 <View style={styles.speechSectionHeaderRow}>
@@ -1251,7 +1398,7 @@ export default function ChatScreen() {
                   )}
                 </View>
 
-                <LiquidGlassView style={styles.modalCard} borderRadius={20} intensity={30} elevated>
+                <View style={[styles.modalCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border, borderWidth: 1 }]}>
                   <Text style={[styles.speechSectionHint, { color: theme.secondary }]}>
                     Choose how you want {character.name} to speak. They will authentically adopt this cadence, humor, and tone in their replies.
                   </Text>
@@ -1340,13 +1487,13 @@ export default function ChatScreen() {
                       </Pressable>
                     ) : null}
                   </View>
-                </LiquidGlassView>
+                </View>
 
-                {/* SECTION 3: CONVERSATION ACTIONS (MODERN LIQUID GLASS TILES) */}
+                {/* SECTION 3: CONVERSATION ACTIONS (SOLID SLEEK TILES) */}
                 <Text style={[styles.modalSectionLabel, { color: theme.secondary }]}>CONVERSATION ACTIONS</Text>
 
                 {/* Action 1: Hide from Recent */}
-                <LiquidGlassView style={styles.actionCardModern} borderRadius={18} intensity={30} elevated>
+                <View style={[styles.actionCardModern, { backgroundColor: theme.surfaceSolid, borderColor: theme.border, borderWidth: 1 }]}>
                   <View style={styles.actionCardHeaderRow}>
                     <View
                       style={[
@@ -1377,7 +1524,7 @@ export default function ChatScreen() {
                       thumbColor="#fff"
                     />
                   </View>
-                </LiquidGlassView>
+                </View>
 
                 {/* Action 2: Clear Chat History */}
                 <Pressable
@@ -1385,7 +1532,7 @@ export default function ChatScreen() {
                   disabled={isActionLoading}
                   style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1, marginTop: 10 }]}
                 >
-                  <LiquidGlassView style={styles.actionCardModern} borderRadius={18} intensity={30} elevated>
+                  <View style={[styles.actionCardModern, { backgroundColor: theme.surfaceSolid, borderColor: theme.border, borderWidth: 1 }]}>
                     <View style={styles.actionCardHeaderRow}>
                       <View style={[styles.actionIconPill, { backgroundColor: 'rgba(255, 149, 0, 0.15)' }]}>
                         <Ionicons name="trash" size={18} color="#FF9500" />
@@ -1402,7 +1549,7 @@ export default function ChatScreen() {
                         </Text>
                       </View>
                     </View>
-                  </LiquidGlassView>
+                  </View>
                 </Pressable>
 
                 {/* Action 3: Delete Complete Profile */}
@@ -1411,7 +1558,7 @@ export default function ChatScreen() {
                   disabled={isActionLoading}
                   style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1, marginTop: 10 }]}
                 >
-                  <LiquidGlassView style={styles.actionCardModern} borderRadius={18} intensity={30} elevated>
+                  <View style={[styles.actionCardModern, { backgroundColor: theme.surfaceSolid, borderColor: theme.border, borderWidth: 1 }]}>
                     <View style={styles.actionCardHeaderRow}>
                       <View style={[styles.actionIconPill, { backgroundColor: 'rgba(255, 59, 48, 0.15)' }]}>
                         <Ionicons name="person-remove" size={18} color="#FF3B30" />
@@ -1426,7 +1573,7 @@ export default function ChatScreen() {
                       </View>
                       <Ionicons name="chevron-forward" size={18} color="#FF3B30" />
                     </View>
-                  </LiquidGlassView>
+                  </View>
                 </Pressable>
 
                 {/* Return to Chat Button */}
@@ -1507,7 +1654,7 @@ export default function ChatScreen() {
                   onPress={() => send(starter)}
                   style={[
                     styles.suggestionPill,
-                    { backgroundColor: theme.cardGlass, borderColor: theme.border },
+                    { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
                   ]}
                 >
                   <Ionicons name="chatbubble-ellipses-outline" size={14} color={theme.secondary} />
@@ -1578,17 +1725,17 @@ export default function ChatScreen() {
           </View>
         )}
 
-        {/* Composer Bar or Voice Recording Bar */}
-        <LiquidGlassView
+        {/* Minimalist Solid Composer Bar */}
+        <View
           style={[
             styles.composer,
             {
+              backgroundColor: theme.background,
+              borderTopColor: theme.border,
               paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 10),
               paddingHorizontal: isRecording ? 6 : 14,
             },
           ]}
-          borderRadius={0}
-          intensity={40}
         >
           {isRecording ? (
             <VoiceWaveformBar
@@ -1618,7 +1765,7 @@ export default function ChatScreen() {
                   styles.input,
                   {
                     color: theme.text,
-                    backgroundColor: theme.surfaceSolid,
+                    backgroundColor: theme.surfaceSecondary,
                     borderColor: theme.border,
                   },
                 ]}
@@ -1644,7 +1791,7 @@ export default function ChatScreen() {
               </Pressable>
             </>
           )}
-        </LiquidGlassView>
+        </View>
 
         {/* Long-press context menu modal */}
         <Modal
@@ -1680,6 +1827,15 @@ export default function ChatScreen() {
             </View>
           </TouchableWithoutFeedback>
         </Modal>
+
+        {/* Email Verification Gate */}
+        <EmailVerificationGate
+          visible={verificationGateVisible}
+          onDismiss={() => setVerificationGateVisible(false)}
+          onSuccess={() => setVerificationGateVisible(false)}
+          title="Verify Email to Continue"
+          subtitle={`To protect your ongoing story with ${character?.name || 'your companion'}, please verify your email.`}
+        />
       </KeyboardAvoidingView>
     </View>
   );
@@ -1801,6 +1957,106 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  heroTopActionsRow: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    zIndex: 3,
+  },
+  heroUploadPill: {
+    backgroundColor: '#007AFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 18,
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  heroCyclePill: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  heroActionPillText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  avatarCameraActionBadge: {
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  photoSuccessPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(52, 199, 89, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(52, 199, 89, 0.35)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+    marginTop: 2,
+  },
+  photoSuccessText: {
+    color: '#34C759',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  uploadLookCard: {
+    width: 72,
+    height: 96,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 6,
+  },
+  uploadLookIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  uploadLookText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  uploadLookSubtext: {
+    fontSize: 9.5,
+    fontWeight: '500',
   },
   randomizeImgBtn: {
     position: 'absolute',

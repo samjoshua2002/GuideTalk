@@ -8,12 +8,15 @@ import {
   Pressable,
   ScrollView,
   Platform,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '@/src/context/ThemeContext';
 import { useAuth } from '@/src/context/AuthContext';
 import { GlowButton } from './GlowButton';
@@ -21,6 +24,53 @@ import { LiquidGlassView } from './LiquidGlassView';
 import { CATEGORY_PRESETS, UniverseCategory } from '@/src/data/rivals';
 import { Character } from '@/src/types/character';
 import { triggerHaptic } from '@/src/lib/haptics';
+
+const ONBOARDING_AVATAR_PRESETS = [
+  'https://api.dicebear.com/9.x/adventurer/png?seed=Alex&backgroundColor=120D26',
+  'https://api.dicebear.com/9.x/adventurer/png?seed=Luna&backgroundColor=120D26',
+  'https://api.dicebear.com/9.x/adventurer/png?seed=Kai&backgroundColor=120D26',
+  'https://api.dicebear.com/9.x/adventurer/png?seed=Rin&backgroundColor=120D26',
+  'https://api.dicebear.com/9.x/adventurer/png?seed=Sora&backgroundColor=120D26',
+];
+
+const RANDOM_LORE_CHARACTERS = [
+  {
+    name: 'Gojo Satoru',
+    series: 'Jujutsu Kaisen',
+    quote: 'Looking powerful! Ready to conquer infinite domains?',
+    avatar: 'https://i.pinimg.com/736x/13/2e/dc/132edc77bf6b3d4f4007886470878ca3.jpg',
+  },
+  {
+    name: 'Furina',
+    series: 'Genshin Impact',
+    quote: 'Ah! A dazzling name fit for the grandest theater of Fontaine!',
+    avatar: 'https://i.pinimg.com/736x/88/2c/37/882c377db9316d3bbd643806be9fc12d.jpg',
+  },
+  {
+    name: 'Hu Tao',
+    series: 'Genshin Impact',
+    quote: 'Oho! Look who wandered into my realm. Ready for spooky rhymes?',
+    avatar: 'https://i.pinimg.com/736x/95/92/83/959283fa7442eb839178ad3a6b5791c5.jpg',
+  },
+  {
+    name: 'Raiden Shogun',
+    series: 'Inazuma',
+    quote: 'Your presence is acknowledged. Do you bring sweets or destiny?',
+    avatar: 'https://i.pinimg.com/736x/2b/23/bf/2b23bf41031d279cf441e3dbe7814b74.jpg',
+  },
+  {
+    name: 'Tony Stark',
+    series: 'Avengers',
+    quote: 'I like the style. Welcome to the high-tech guild, kid.',
+    avatar: 'https://i.pinimg.com/736x/43/d8/64/43d864197eef9f2762a74c7dbb0e8b1b.jpg',
+  },
+  {
+    name: 'Spider-Man',
+    series: 'Marvel',
+    quote: 'Awesome name! Friendly neighborhood companion at your service.',
+    avatar: 'https://i.pinimg.com/736x/eb/65/52/eb6552bb7cb56f3ce010c7e289bf672b.jpg',
+  },
+];
 
 interface OnboardingProps {
   visible: boolean;
@@ -30,12 +80,15 @@ interface OnboardingProps {
 
 export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: OnboardingProps) {
   const { theme, isDark } = useTheme();
-  const { register, login, setCompletedOnboarding } = useAuth();
+  const { register, login, setCompletedOnboarding, loginWithPasskey } = useAuth();
   const insets = useSafeAreaInsets();
 
   const [step, setStep] = useState<number>(1);
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
+  const [avatarUri, setAvatarUri] = useState<string>(ONBOARDING_AVATAR_PRESETS[1]);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [randomCharIdx, setRandomCharIdx] = useState(0);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
@@ -93,6 +146,27 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
     }
   };
 
+  const handlePasskeySignIn = async () => {
+    setSignInLoading(true);
+    setSignInError(null);
+    try {
+      const ok = await loginWithPasskey(signInUsername.trim() || undefined);
+      if (ok) {
+        await setCompletedOnboarding(true);
+        triggerHaptic('success');
+        onComplete();
+      } else {
+        triggerHaptic('warning');
+        setSignInError('No passkey found for this account.');
+      }
+    } catch (err: any) {
+      triggerHaptic('warning');
+      setSignInError(err?.message || 'Passkey sign-in failed.');
+    } finally {
+      setSignInLoading(false);
+    }
+  };
+
   const toggleCompanion = (charId: string) => {
     triggerHaptic('selection');
     if (selectedCompanionIds.includes(charId)) {
@@ -103,6 +177,35 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
       } else {
         setSelectedCompanionIds([...selectedCompanionIds.slice(1), charId]);
       }
+    }
+  };
+
+  const handlePickCustomAvatar = async () => {
+    try {
+      triggerHaptic('light');
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Photo Permission Needed',
+          'Please allow photo library access to upload your custom profile picture.'
+        );
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setIsUploadingPhoto(true);
+        setAvatarUri(result.assets[0].uri);
+        triggerHaptic('success');
+      }
+    } catch (err) {
+      console.warn('Pick avatar error in onboarding:', err);
+    } finally {
+      setIsUploadingPhoto(false);
     }
   };
 
@@ -134,7 +237,8 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
         email.trim(),
         age ? Number(age) : undefined,
         selectedCategory,
-        finalPicks
+        finalPicks,
+        avatarUri
       );
       await setCompletedOnboarding(true);
       triggerHaptic('success');
@@ -186,7 +290,7 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
           <View style={[styles.topBar, { paddingTop: safeTopPadding }]}>
             {!isSignInMode && (
               <View style={styles.topProgressTrack}>
-                {[1, 2, 3, 4, 5].map((s) => {
+                {[1, 2, 3, 4].map((s) => {
                   const isActive = s === step;
                   const isDone = s < step;
                   return (
@@ -244,7 +348,7 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
               <View style={[styles.stepIndicatorPill, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
                 <Ionicons name="sparkles" size={11} color={theme.secondary} style={{ marginRight: 4 }} />
                 <Text style={[styles.stepIndicatorText, { color: theme.secondary }]}>
-                  {isSignInMode ? 'ACCOUNT LOGIN' : `STEP ${step} OF 5`}
+                  {isSignInMode ? 'ACCOUNT LOGIN' : `STEP ${step} OF 4`}
                 </Text>
               </View>
 
@@ -342,6 +446,16 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
                   onPress={handleSignIn}
                 />
 
+                <View style={{ marginTop: 10 }}>
+                  <GlowButton
+                    label={signInLoading ? 'Authenticating…' : 'Sign In with Passkey / Face ID'}
+                    icon={<Ionicons name="finger-print" size={16} color={theme.text} />}
+                    variant="secondary"
+                    disabled={signInLoading}
+                    onPress={handlePasskeySignIn}
+                  />
+                </View>
+
                 <Pressable
                   onPress={() => {
                     triggerHaptic('light');
@@ -358,19 +472,96 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
             </ScrollView>
           ) : null}
 
-          {/* SCREEN 1: What is your name? */}
+          {/* SCREEN 1: Unified Identity & Avatar (Instagram / Snap Style) */}
           {!isSignInMode && step === 1 && (
             <ScrollView contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
-              <LiquidGlassView style={styles.logoEmblemGlass} intensity={40} borderRadius={38} elevated>
-                <Ionicons name="sparkles" size={38} color={theme.text} />
-              </LiquidGlassView>
+              {/* Dynamic Live Random Character Reactions Box */}
+              <View style={[styles.randomReactionCard, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+                <Image
+                  source={{ uri: RANDOM_LORE_CHARACTERS[randomCharIdx].avatar }}
+                  style={styles.randomReactionAvatar}
+                  contentFit="cover"
+                />
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[styles.randomReactionName, { color: theme.text }]}>
+                      {RANDOM_LORE_CHARACTERS[randomCharIdx].name}
+                    </Text>
+                    <View style={styles.livePulseDot} />
+                  </View>
+                  <Text style={[styles.randomReactionQuote, { color: theme.secondary }]} numberOfLines={2}>
+                    {name.trim()
+                      ? `"${name}! ${RANDOM_LORE_CHARACTERS[randomCharIdx].quote}"`
+                      : `"${RANDOM_LORE_CHARACTERS[randomCharIdx].quote}"`}
+                  </Text>
+                </View>
+              </View>
 
-              <Text style={[styles.pageEyebrow, { color: theme.secondary }]}>WELCOME TO GUILDTALK</Text>
+              {/* Instagram / Snap Story Ring User Avatar with Camera Badge */}
+              <View style={styles.storyAvatarCenter}>
+                <Pressable
+                  onPress={handlePickCustomAvatar}
+                  disabled={isUploadingPhoto}
+                  style={({ pressed }) => [{ opacity: pressed ? 0.88 : 1 }]}
+                >
+                  <LinearGradient
+                    colors={['#F58529', '#DD2A7B', '#8134AF', '#515BD4']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.storyRing}
+                  >
+                    <View style={[styles.storyAvatarInner, { backgroundColor: theme.background }]}>
+                      <Image source={{ uri: avatarUri }} style={styles.storyAvatarImg} />
+                    </View>
+                  </LinearGradient>
+                  <View style={[styles.cameraBadge, { backgroundColor: theme.text }]}>
+                    {isUploadingPhoto ? (
+                      <ActivityIndicator size="small" color={theme.background} />
+                    ) : (
+                      <Ionicons name="camera" size={15} color={theme.background} />
+                    )}
+                  </View>
+                </Pressable>
+
+                <Text style={[styles.storyAvatarHint, { color: theme.secondary }]}>
+                  Tap avatar to upload your own picture
+                </Text>
+
+                {/* Avatar Quick Presets Strip */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.avatarPresetsRow}
+                >
+                  <Pressable
+                    onPress={handlePickCustomAvatar}
+                    style={[styles.uploadPresetChip, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}
+                  >
+                    <Ionicons name="cloud-upload-outline" size={14} color={theme.text} />
+                    <Text style={[styles.uploadPresetText, { color: theme.text }]}>Upload</Text>
+                  </Pressable>
+                  {ONBOARDING_AVATAR_PRESETS.map((uri, idx) => (
+                    <Pressable
+                      key={idx}
+                      onPress={() => {
+                        triggerHaptic('selection');
+                        setAvatarUri(uri);
+                      }}
+                      style={[
+                        styles.miniAvatarPreset,
+                        avatarUri === uri && { borderColor: theme.text, borderWidth: 2.5 },
+                      ]}
+                    >
+                      <Image source={{ uri }} style={styles.miniAvatarPresetImg} />
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+
+              <Text style={[styles.pageEyebrow, { color: theme.secondary, marginTop: 14 }]}>YOUR IDENTITY</Text>
               <Text style={[styles.pageTitle, { color: theme.text }]}>What should we call you?</Text>
-              <Text style={[styles.pageSubtitle, { color: theme.secondary }]}>
-                Your companions will remember your name and address you with affection, sarcasm, and emotional realism.
-              </Text>
 
+              {/* Name Field */}
               <LiquidGlassView
                 style={[
                   styles.fullPageInputWrap,
@@ -382,12 +573,40 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
                 <Ionicons name="person-outline" size={20} color={focusedField === 'name' ? theme.text : theme.secondary} />
                 <TextInput
                   value={name}
-                  onChangeText={setName}
+                  onChangeText={(val) => {
+                    setName(val);
+                    if (val.length > 0) {
+                      setRandomCharIdx(val.length % RANDOM_LORE_CHARACTERS.length);
+                    }
+                  }}
                   placeholder="Enter your name or alias"
                   placeholderTextColor={theme.muted}
                   style={[styles.fullPageInput, { color: theme.text }]}
                   autoFocus
                   onFocus={() => setFocusedField('name')}
+                  onBlur={() => setFocusedField(null)}
+                />
+              </LiquidGlassView>
+
+              {/* Age Field (Clean, NO suggestions/chips) */}
+              <LiquidGlassView
+                style={[
+                  styles.fullPageInputWrap,
+                  { marginTop: 12 },
+                  focusedField === 'age' && { borderColor: theme.text, borderWidth: 1.5 },
+                ]}
+                intensity={30}
+                borderRadius={18}
+              >
+                <Ionicons name="calendar-outline" size={19} color={focusedField === 'age' ? theme.text : theme.secondary} />
+                <TextInput
+                  value={age}
+                  onChangeText={setAge}
+                  placeholder="Enter your age (e.g. 21)"
+                  placeholderTextColor={theme.muted}
+                  keyboardType="numeric"
+                  style={[styles.fullPageInput, { color: theme.text }]}
+                  onFocus={() => setFocusedField('age')}
                   onBlur={() => setFocusedField(null)}
                 />
               </LiquidGlassView>
@@ -406,88 +625,8 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
             </ScrollView>
           )}
 
-          {/* SCREEN 2: Age Input */}
+          {/* SCREEN 2: Account Credentials */}
           {step === 2 && (
-            <ScrollView contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
-              <LiquidGlassView style={styles.logoEmblemSmallGlass} intensity={35} borderRadius={30} elevated>
-                <Ionicons name="calendar-outline" size={26} color={theme.text} />
-              </LiquidGlassView>
-
-              <Text style={[styles.pageEyebrow, { color: theme.secondary }]}>YOUR IDENTITY</Text>
-              <Text style={[styles.pageTitle, { color: theme.text }]}>How old are you?</Text>
-              <Text style={[styles.pageSubtitle, { color: theme.secondary }]}>
-                Helps your AI companions calibrate their conversational wit, maturity, and dialogue.
-              </Text>
-
-              <LiquidGlassView
-                style={[
-                  styles.fullPageInputWrap,
-                  focusedField === 'age' && { borderColor: theme.text, borderWidth: 1.5 },
-                ]}
-                intensity={30}
-                borderRadius={18}
-              >
-                <Ionicons name="sparkles-outline" size={19} color={focusedField === 'age' ? theme.text : theme.secondary} />
-                <TextInput
-                  value={age}
-                  onChangeText={setAge}
-                  placeholder="Enter your age (e.g. 21)"
-                  placeholderTextColor={theme.muted}
-                  keyboardType="numeric"
-                  style={[styles.fullPageInput, { color: theme.text }]}
-                  onFocus={() => setFocusedField('age')}
-                  onBlur={() => setFocusedField(null)}
-                />
-              </LiquidGlassView>
-
-              {/* Modern Glass Capsule Chips */}
-              <View style={styles.ageChipsGrid}>
-                {['18', '20', '22', '25', '28', '30+'].map((chip) => {
-                  const val = chip.replace('+', '');
-                  const isSelected = age === val;
-                  return (
-                    <Pressable
-                      key={chip}
-                      onPress={() => {
-                        triggerHaptic('selection');
-                        setAge(val);
-                      }}
-                      style={[
-                        styles.ageChipBox,
-                        {
-                          backgroundColor: isSelected ? theme.text : theme.surfaceSecondary,
-                          borderColor: isSelected ? theme.text : theme.border,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.ageChipBoxText,
-                          { color: isSelected ? theme.background : theme.text },
-                        ]}
-                      >
-                        {chip}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              <View style={styles.bottomCtaContainer}>
-                <GlowButton
-                  label="Continue"
-                  icon={<Ionicons name="arrow-forward" size={16} color={theme.background} />}
-                  onPress={() => {
-                    triggerHaptic('medium');
-                    setStep(3);
-                  }}
-                />
-              </View>
-            </ScrollView>
-          )}
-
-          {/* SCREEN 3: Account Credentials */}
-          {step === 3 && (
             <ScrollView contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
               <LiquidGlassView style={styles.logoEmblemSmallGlass} intensity={35} borderRadius={30} elevated>
                 <Ionicons name="shield-checkmark-outline" size={26} color={theme.text} />
@@ -549,15 +688,15 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
                   icon={<Ionicons name="arrow-forward" size={16} color={theme.background} />}
                   onPress={() => {
                     triggerHaptic('medium');
-                    setStep(4);
+                    setStep(3);
                   }}
                 />
               </View>
             </ScrollView>
           )}
 
-          {/* SCREEN 4: Category Selection (Marvel, Anime, Games, Hollywood, Bollywood) */}
-          {step === 4 && (
+          {/* SCREEN 3: Category Selection (Marvel, Anime, Games, Hollywood, Bollywood) */}
+          {step === 3 && (
             <ScrollView contentContainerStyle={styles.stepContent} showsVerticalScrollIndicator={false}>
               <LiquidGlassView style={styles.logoEmblemSmallGlass} intensity={35} borderRadius={30} elevated>
                 <Ionicons name="compass-outline" size={26} color={theme.text} />
@@ -693,7 +832,7 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
                 <Pressable
                   onPress={() => {
                     triggerHaptic('light');
-                    setStep(5);
+                    setStep(4);
                   }}
                   style={styles.customizeRowBtn}
                   hitSlop={12}
@@ -708,8 +847,8 @@ export function OnboardingStoryboard({ visible, onComplete, onOpenSignIn }: Onbo
             </ScrollView>
           )}
 
-          {/* SCREEN 5: Netflix-Style Boxed Companions & Favorites */}
-          {step === 5 && (
+          {/* SCREEN 4: Netflix-Style Boxed Companions & Favorites */}
+          {step === 4 && (
             <View style={styles.netflixStepContainer}>
               <View style={styles.netflixHeader}>
                 <View>
@@ -1190,5 +1329,121 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     marginBottom: 16,
+  },
+  randomReactionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    marginBottom: 20,
+    marginTop: 4,
+  },
+  randomReactionAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.1)',
+  },
+  randomReactionName: {
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  livePulseDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#34C759',
+  },
+  randomReactionQuote: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 2,
+    fontStyle: 'italic',
+  },
+  storyAvatarCenter: {
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  storyAvatarWrap: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storyRing: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    padding: 3.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storyAvatarInner: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storyAvatarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: 2,
+    right: 6,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#000',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  storyAvatarHint: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 10,
+    marginBottom: 14,
+  },
+  avatarPresetsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 8,
+  },
+  uploadPresetChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 18,
+    borderWidth: 1,
+  },
+  uploadPresetText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  miniAvatarPreset: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  miniAvatarPresetImg: {
+    width: '100%',
+    height: '100%',
   },
 });

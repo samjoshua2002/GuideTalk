@@ -3,6 +3,7 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform, StyleSheet, Pressable, View } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/src/context/ThemeContext';
 import { triggerHaptic } from '@/src/lib/haptics';
@@ -16,6 +17,32 @@ function InteractiveTabButton({
 }: any) {
   const focused = accessibilityState?.selected;
   const { isDark } = useTheme();
+  const isCreate =
+    props?.accessibilityLabel?.toLowerCase()?.includes('create') ||
+    props?.to?.includes('create') ||
+    props?.href?.includes('create');
+
+  if (isCreate) {
+    return (
+      <Pressable
+        {...props}
+        onPress={(e) => {
+          triggerHaptic('medium');
+          onPress?.(e);
+        }}
+        style={({ pressed }) => [
+          styles.tabButtonWrap,
+          style,
+          {
+            opacity: pressed ? 0.85 : 1,
+            transform: [{ scale: pressed ? 0.92 : 1 }],
+          },
+        ]}
+      >
+        {children}
+      </Pressable>
+    );
+  }
 
   return (
     <Pressable
@@ -145,6 +172,25 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="create"
+        options={{
+          title: 'Create',
+          tabBarLabel: () => null,
+          tabBarIcon: () => (
+            <View style={styles.createButtonCenter}>
+              <LinearGradient
+                colors={['#8B5CF6', '#EC4899', '#3B82F6']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.createButtonGradient}
+              >
+                <Ionicons name="add" size={26} color="#FFFFFF" />
+              </LinearGradient>
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="favorites"
         options={{
           title: 'Favorites',
@@ -192,5 +238,22 @@ const styles = StyleSheet.create({
   },
   tabActivePillFocused: {
     borderWidth: 1,
+  },
+  createButtonCenter: {
+    top: -10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#EC4899',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  createButtonGradient: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

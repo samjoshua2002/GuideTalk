@@ -23,7 +23,7 @@ interface AuthModalProps {
 
 export function AuthModal({ visible, onClose }: AuthModalProps) {
   const { theme } = useTheme();
-  const { login, register, continueAsGuest } = useAuth();
+  const { login, register, continueAsGuest, loginWithPasskey } = useAuth();
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
@@ -50,6 +50,23 @@ export function AuthModal({ visible, onClose }: AuthModalProps) {
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Authentication failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasskeyLogin = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const ok = await loginWithPasskey(username.trim() || undefined);
+      if (ok) {
+        onClose();
+      } else {
+        setError('No passkey found for this device or account.');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Passkey authentication failed.');
     } finally {
       setLoading(false);
     }
@@ -189,6 +206,18 @@ export function AuthModal({ visible, onClose }: AuthModalProps) {
                 loading={loading}
               />
             </View>
+
+            {mode === 'login' && (
+              <View style={{ marginTop: 10 }}>
+                <GlowButton
+                  label="Sign in with Face ID / Passkey"
+                  onPress={handlePasskeyLogin}
+                  variant="secondary"
+                  disabled={loading}
+                  icon={<Ionicons name="finger-print" size={18} color={theme.text} style={{ marginRight: 6 }} />}
+                />
+              </View>
+            )}
 
             <Pressable
               onPress={() => {

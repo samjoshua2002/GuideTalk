@@ -28,11 +28,12 @@ import Constants from 'expo-constants';
 import { getAllPresets, CATEGORY_PRESETS, UniverseCategory, RivalRelation, getRivalsForWorkspace } from '@/src/data/rivals';
 import { Character } from '@/src/types/character';
 import { fetchCharacters, listConversations, ConversationSummary, fetchRecommendations, fetchDynamicRivals, fetchAppVersion, AppVersionInfo } from '@/src/lib/chatApi';
+import { loadSavedUserCharacters, subscribeToCustomCharacters } from '@/src/lib/customCharacters';
 import { LiquidGlassView } from '@/src/components/LiquidGlassView';
 import { GlowButton } from '@/src/components/GlowButton';
 import { AuthModal } from '@/src/components/AuthModal';
 import { NotificationsModal } from '@/src/components/NotificationsModal';
-import { NewVersionModal } from '@/src/components/NewVersionModal';
+import { FullPageUpdateScreen } from '@/src/components/FullPageUpdateScreen';
 import * as Updates from 'expo-updates';
 
 import * as Notifications from 'expo-notifications';
@@ -704,13 +705,34 @@ export default function DiscoverScreen() {
     return unsub;
   }, [loadFavorites]);
 
+  // User-created characters (with real-time updates and storage sync)
+  const [userCharacters, setUserCharacters] = useState<Character[]>([]);
+
+  const loadUserCharacters = useCallback(async () => {
+    try {
+      const chars = await loadSavedUserCharacters();
+      setUserCharacters(chars);
+    } catch (e) {
+      console.warn('Failed to load user characters:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadUserCharacters();
+    const unsub = subscribeToCustomCharacters((chars) => {
+      setUserCharacters(chars);
+    });
+    return () => unsub();
+  }, [loadUserCharacters]);
+
   useFocusEffect(
     useCallback(() => {
       loadActivity();
       loadBehaviouralData();
       loadFavorites();
+      loadUserCharacters();
       refreshNotifications();
-    }, [loadFavorites, refreshNotifications])
+    }, [loadFavorites, loadUserCharacters, refreshNotifications])
   );
 
   const openCharacter = (id: string) => {
@@ -1319,7 +1341,13 @@ export default function DiscoverScreen() {
                   #{index + 1} of {spotlightLengthRef.current}
                 </Text>
               </View>
-              <View style={styles.netflixPortraitOverlay}>
+              {/* Glass with transparent effect floating overlay */}
+              <LiquidGlassView
+                style={styles.netflixPortraitGlassOverlay}
+                borderRadius={20}
+                intensity={45}
+                elevated
+              >
                 <Text style={styles.netflixPortraitName} numberOfLines={1}>{item.name}</Text>
                 <Text style={styles.netflixPortraitRole} numberOfLines={1}>{item.role}</Text>
                 <Text style={styles.netflixPortraitDesc} numberOfLines={2}>
@@ -1341,7 +1369,7 @@ export default function DiscoverScreen() {
                     <Text style={[styles.netflixInfoBtnText, { color: '#fff' }]}>Lore</Text>
                   </Pressable>
                 </View>
-              </View>
+              </LiquidGlassView>
             </Pressable>
           </View>
         </View>
@@ -1358,7 +1386,7 @@ export default function DiscoverScreen() {
         delayLongPress={350}
         style={({ pressed }) => [styles.panoramicCardPressable, pressed && { opacity: 0.9 }]}
       >
-        <LiquidGlassView style={styles.panoramicCard} borderRadius={22} intensity={35} elevated>
+        <View style={[styles.panoramicCard, styles.solidCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
           <View style={styles.panoramicImageWrap}>
             <DynamicCharacterImage
               character={item}
@@ -1401,7 +1429,7 @@ export default function DiscoverScreen() {
               </View>
             </View>
           </View>
-        </LiquidGlassView>
+        </View>
       </Pressable>
     );
   }, [openCharacter, handleCharacterLongPress, theme]);
@@ -1418,7 +1446,7 @@ export default function DiscoverScreen() {
         onLongPress={() => handleCharacterLongPress(char)}
         delayLongPress={350}
       >
-        <LiquidGlassView style={styles.exploreCard} borderRadius={20} intensity={30} elevated>
+        <View style={[styles.exploreCard, styles.solidCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
           <View style={styles.exploreCardImageWrap}>
             <DynamicCharacterImage
               character={char}
@@ -1453,13 +1481,26 @@ export default function DiscoverScreen() {
               <Ionicons name="chevron-forward" size={12} color={theme.muted} style={{ marginLeft: 'auto' }} />
             </View>
           </View>
-        </LiquidGlassView>
+        </View>
       </Pressable>
     );
   }, [router, theme]);
 
   // Only show skeleton on initial mount when no characters exist yet — never wipe out content during pull-to-refresh
   const showSkeleton = isLoadingData && characterList.length === 0;
+
+  if (updateModalVisible) {
+    return (
+      <FullPageUpdateScreen
+        updateInfo={availableUpdate}
+        otaUpdateAvailable={otaAvailable}
+        onDismiss={() => {
+          hasDismissedVersionModalThisSession = true;
+          setUpdateModalVisible(false);
+        }}
+      />
+    );
+  }
 
   return (
 
@@ -1759,6 +1800,122 @@ export default function DiscoverScreen() {
           ) : null}
 
           {/* ============================================================ */}
+          {/* YOUR CHARACTERS: USER CREATED COMPANIONS                    */}
+          {/* ============================================================ */}
+          <View style={styles.userCharactersSection}>
+            <View style={styles.sectionHeader}>
+              <View>
+                <Text style={[styles.sectionEyebrow, { color: '#0A84FF' }]}>CREATED BY YOU</Text>
+                <Text style={[styles.sectionTitle, { color: theme.text }]}>Your Characters</Text>
+              </View>
+              <Pressable
+                onPress={() => router.push('/create')}
+                style={({ pressed }) => [
+                  styles.createCharHeaderBtn,
+                  { backgroundColor: '#0A84FF', opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Ionicons name="add" size={16} color="#FFFFFF" />
+                <Text style={styles.createCharHeaderBtnText}>Create New</Text>
+              </Pressable>
+            </View>
+
+            {userCharacters.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.workspaceList}>
+                {userCharacters.map((char) => (
+                  <Pressable
+                    key={`user-char-${char.id}`}
+                    onPress={() => openCharacter(char.id)}
+                    onLongPress={() => handleCharacterLongPress(char)}
+                    delayLongPress={350}
+                    style={({ pressed }) => [styles.workspaceCardPressable, pressed && { opacity: 0.88 }]}
+                  >
+                    <View style={[styles.workspaceCard, styles.solidCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
+                      <View style={styles.workspaceImageWrap}>
+                        <DynamicCharacterImage
+                          character={char}
+                          preferCover
+                          style={styles.workspaceImage}
+                          contentFit="cover"
+                          contentPosition="top"
+                          transition={200}
+                        />
+                        <View style={styles.workspaceBadgeRow}>
+                          <View style={[styles.seriesBadgeMini, { backgroundColor: '#0A84FFE6' }]}>
+                            <Text style={styles.seriesBadgeMiniText} numberOfLines={1}>
+                              {char.series || 'CUSTOM'}
+                            </Text>
+                          </View>
+                          <View style={[styles.customCharStarBadge, { backgroundColor: 'rgba(0,0,0,0.65)' }]}>
+                            <Ionicons name="sparkles" size={11} color="#FFD700" />
+                          </View>
+                        </View>
+                      </View>
+
+                      <View style={styles.workspaceCardContent}>
+                        <Text style={[styles.workspaceCharName, { color: theme.text }]} numberOfLines={1}>
+                          {char.name}
+                        </Text>
+                        <Text style={[styles.workspaceCharRole, { color: theme.secondary }]} numberOfLines={1}>
+                          {char.role}
+                        </Text>
+
+                        <Pressable
+                          onPress={() => router.push(`/chat/${char.id}`)}
+                          style={[styles.workspaceActionBtn, { backgroundColor: '#0A84FF' }]}
+                        >
+                          <Ionicons name="chatbubble-ellipses" size={11} color="#FFFFFF" style={{ marginRight: 4 }} />
+                          <Text style={[styles.workspaceActionText, { color: '#FFFFFF' }]}>Chat</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  </Pressable>
+                ))}
+                {/* Add Character Quick Button Card */}
+                <Pressable
+                  onPress={() => router.push('/create')}
+                  style={({ pressed }) => [styles.addCustomCardPressable, pressed && { opacity: 0.88 }]}
+                >
+                  <View style={[styles.addCustomCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
+                    <View style={[styles.addCustomIconCircle, { backgroundColor: theme.surfaceSecondary }]}>
+                      <Ionicons name="add" size={26} color="#0A84FF" />
+                    </View>
+                    <Text style={[styles.addCustomTitle, { color: theme.text }]}>New Character</Text>
+                    <Text style={[styles.addCustomSubtitle, { color: theme.muted }]}>Create custom lore & avatar</Text>
+                  </View>
+                </Pressable>
+              </ScrollView>
+            ) : (
+              <Pressable
+                onPress={() => router.push('/create')}
+                style={({ pressed }) => [
+                  styles.emptyCustomCharCard,
+                  { backgroundColor: theme.surfaceSolid, borderColor: theme.border, opacity: pressed ? 0.9 : 1 },
+                ]}
+              >
+                <LinearGradient
+                  colors={['rgba(10, 132, 255, 0.12)', 'transparent']}
+                  style={StyleSheet.absoluteFill}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                />
+                <View style={styles.emptyCustomIconCircle}>
+                  <Ionicons name="sparkles" size={22} color="#0A84FF" />
+                </View>
+                <View style={{ flex: 1, marginLeft: 14 }}>
+                  <Text style={[styles.emptyCustomTitle, { color: theme.text }]}>Create Your First Character</Text>
+                  <Text style={[styles.emptyCustomDesc, { color: theme.secondary }]}>
+                    Design your own custom companion with personal photo, unique backstory, and AI responses.
+                  </Text>
+                </View>
+                <View style={styles.emptyCustomBtn}>
+                  <Ionicons name="add-circle" size={24} color="#0A84FF" />
+                </View>
+              </Pressable>
+            )}
+          </View>
+
+          {/* ============================================================ */}
           {/* FAVORITE COMPANIONS: STARRED GUILD (USER-ISOLATED)          */}
           {/* ============================================================ */}
           {favoriteCharacters.length > 0 && (
@@ -1794,7 +1951,7 @@ export default function DiscoverScreen() {
                     delayLongPress={350}
                     style={({ pressed }) => [styles.workspaceCardPressable, pressed && { opacity: 0.88 }]}
                   >
-                    <LiquidGlassView style={styles.workspaceCard} borderRadius={22} intensity={32} elevated>
+                    <View style={[styles.workspaceCard, styles.solidCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
                       <View style={styles.workspaceImageWrap}>
                         <DynamicCharacterImage
                           character={char}
@@ -1832,7 +1989,7 @@ export default function DiscoverScreen() {
                           <Text style={[styles.workspaceActionText, { color: '#FFFFFF' }]}>Chat</Text>
                         </Pressable>
                       </View>
-                    </LiquidGlassView>
+                    </View>
                   </Pressable>
                 ))}
               </ScrollView>
@@ -1876,7 +2033,7 @@ export default function DiscoverScreen() {
                     delayLongPress={350}
                     style={({ pressed }) => [styles.workspaceCardPressable, pressed && { opacity: 0.88 }]}
                   >
-                    <LiquidGlassView style={styles.workspaceCard} borderRadius={22} intensity={32} elevated>
+                    <View style={[styles.workspaceCard, styles.solidCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
                       <View style={styles.workspaceImageWrap}>
                         <DynamicCharacterImage
                           character={char}
@@ -1912,7 +2069,7 @@ export default function DiscoverScreen() {
                           <Text style={[styles.workspaceActionText, { color: theme.background }]}>Chat</Text>
                         </Pressable>
                       </View>
-                    </LiquidGlassView>
+                    </View>
                   </Pressable>
                 ))}
               </ScrollView>
@@ -1962,7 +2119,7 @@ export default function DiscoverScreen() {
                       delayLongPress={350}
                       style={({ pressed }) => [styles.activityCardPressable, pressed && { opacity: 0.88 }]}
                     >
-                      <LiquidGlassView style={styles.activityCard} borderRadius={22} intensity={32} elevated>
+                      <View style={[styles.activityCard, styles.solidCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
                         <View style={styles.activityImageWrap}>
                           <DynamicCharacterImage
                             character={char}
@@ -2005,19 +2162,19 @@ export default function DiscoverScreen() {
                             <Text style={[styles.activityActionText, { color: theme.background }]}>Resume Chat</Text>
                           </Pressable>
                         </View>
-                      </LiquidGlassView>
+                      </View>
                     </Pressable>
                   );
                 })}
               </ScrollView>
             ) : (
-              <LiquidGlassView style={styles.emptyActivityBox} borderRadius={20} intensity={25}>
+              <View style={[styles.emptyActivityBox, styles.solidCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
                 <Ionicons name="chatbubble-ellipses-outline" size={24} color={theme.secondary} style={{ marginBottom: 6 }} />
                 <Text style={[styles.emptyActivityTitle, { color: theme.text }]}>No Conversations Yet</Text>
                 <Text style={[styles.emptyActivitySubtitle, { color: theme.secondary }]}>
                   Start chatting with your companions above. Your ongoing interactions and history will appear here.
                 </Text>
-              </LiquidGlassView>
+              </View>
             )}
           </View>
 
@@ -2058,7 +2215,7 @@ export default function DiscoverScreen() {
                       onPress={() => openCharacter(char.id)}
                       style={({ pressed }) => [styles.waifuCardPressable, pressed && { opacity: 0.88 }]}
                     >
-                      <LiquidGlassView style={styles.waifuCard} borderRadius={22} intensity={32} elevated>
+                      <View style={[styles.waifuCard, styles.solidCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
                         <View style={styles.waifuImageWrap}>
                           <DynamicCharacterImage
                             character={char}
@@ -2100,7 +2257,7 @@ export default function DiscoverScreen() {
                             <Text style={styles.waifuChatBtnText}>Chat Now</Text>
                           </Pressable>
                         </View>
-                      </LiquidGlassView>
+                      </View>
                     </Pressable>
                   ))}
                 </ScrollView>
@@ -2120,7 +2277,7 @@ export default function DiscoverScreen() {
                       onPress={() => openCharacter(char.id)}
                       style={({ pressed }) => [styles.waifuCardPressable, pressed && { opacity: 0.88 }]}
                     >
-                      <LiquidGlassView style={styles.waifuCard} borderRadius={22} intensity={32} elevated>
+                      <View style={[styles.waifuCard, styles.solidCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
                         <View style={styles.waifuImageWrap}>
                           <DynamicCharacterImage
                             character={char}
@@ -2162,7 +2319,7 @@ export default function DiscoverScreen() {
                             <Text style={styles.waifuChatBtnText}>Chat Now</Text>
                           </Pressable>
                         </View>
-                      </LiquidGlassView>
+                      </View>
                     </Pressable>
                   ))}
                 </ScrollView>
@@ -2219,7 +2376,7 @@ export default function DiscoverScreen() {
                     onPress={() => router.push(`/chat/${rival.id}`)}
                     style={({ pressed }) => [styles.rivalCardPressable, pressed && { opacity: 0.88 }]}
                   >
-                    <LiquidGlassView style={styles.rivalCard} borderRadius={24} intensity={40} elevated>
+                    <View style={[styles.rivalCard, styles.solidCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
                       <View style={styles.rivalImageWrap}>
                         <DynamicCharacterImage
                           character={rival}
@@ -2267,7 +2424,7 @@ export default function DiscoverScreen() {
                           <Text style={styles.rivalConfrontBtnText}>Confront & Clash</Text>
                         </Pressable>
                       </View>
-                    </LiquidGlassView>
+                    </View>
                   </Pressable>
                 );
               })}
@@ -2305,7 +2462,7 @@ export default function DiscoverScreen() {
         {/* ============================================================ */}
         {currentProphecy && (
           <View style={styles.prophecyWrapper}>
-            <LiquidGlassView style={styles.prophecyCard} borderRadius={20} intensity={25} elevated>
+            <View style={[styles.prophecyCard, styles.solidCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
               <View style={styles.prophecyHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
                   <Ionicons name="sparkles" size={14} color="#FF9F0A" />
@@ -2348,7 +2505,7 @@ export default function DiscoverScreen() {
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={theme.secondary} />
               </Pressable>
-            </LiquidGlassView>
+            </View>
           </View>
         )}
 
@@ -2495,7 +2652,7 @@ export default function DiscoverScreen() {
           }
           style={({ pressed }) => [styles.scenarioPressable, pressed && { opacity: 0.85 }]}
         >
-          <LiquidGlassView style={styles.scenarioCard} borderRadius={20} intensity={25}>
+          <View style={[styles.scenarioCard, styles.solidCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
             <View style={[styles.scenarioIcon, { backgroundColor: theme.surfaceSecondary }]}>
               <Ionicons name="cafe-outline" size={22} color={theme.text} />
             </View>
@@ -2509,7 +2666,7 @@ export default function DiscoverScreen() {
               <Ionicons name="chatbubble" size={12} color={theme.background} style={{ marginRight: 4 }} />
               <Text style={[styles.scenarioActionText, { color: theme.background }]}>Chat</Text>
             </View>
-          </LiquidGlassView>
+          </View>
         </Pressable>
 
         <Pressable
@@ -2521,7 +2678,7 @@ export default function DiscoverScreen() {
           }
           style={({ pressed }) => [styles.scenarioPressable, pressed && { opacity: 0.85 }]}
         >
-          <LiquidGlassView style={styles.scenarioCard} borderRadius={20} intensity={25}>
+          <View style={[styles.scenarioCard, styles.solidCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
             <View style={[styles.scenarioIcon, { backgroundColor: theme.surfaceSecondary }]}>
               <Ionicons name="wine-outline" size={22} color={theme.text} />
             </View>
@@ -2535,7 +2692,7 @@ export default function DiscoverScreen() {
               <Ionicons name="chatbubble" size={12} color={theme.background} style={{ marginRight: 4 }} />
               <Text style={[styles.scenarioActionText, { color: theme.background }]}>Chat</Text>
             </View>
-          </LiquidGlassView>
+          </View>
         </Pressable>
       </ScrollView>
 
@@ -2571,17 +2728,6 @@ export default function DiscoverScreen() {
           );
         }}
         userName={user?.name || user?.username || 'there'}
-      />
-
-      {/* Discover New Features & Version Update Full-Screen Modal */}
-      <NewVersionModal
-        visible={updateModalVisible}
-        updateInfo={availableUpdate}
-        otaUpdateAvailable={otaAvailable}
-        onDismiss={() => {
-          hasDismissedVersionModalThisSession = true;
-          setUpdateModalVisible(false);
-        }}
       />
 
       {/* Character Long Press Action Modal */}
@@ -3606,6 +3752,108 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 5,
     borderRadius: 12,
+  },
+  netflixPortraitGlassOverlay: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    right: 12,
+    padding: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+  },
+  solidCard: {
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  userCharactersSection: {
+    marginBottom: 24,
+  },
+  createCharHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    gap: 4,
+  },
+  createCharHeaderBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  customCharStarBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addCustomCardPressable: {
+    width: 150,
+  },
+  addCustomCard: {
+    width: 150,
+    height: 236,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  addCustomIconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  addCustomTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  addCustomSubtitle: {
+    fontSize: 11,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  emptyCustomCharCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  emptyCustomIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(10, 132, 255, 0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyCustomTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  emptyCustomDesc: {
+    fontSize: 11.5,
+    marginTop: 3,
+    lineHeight: 16,
+  },
+  emptyCustomBtn: {
+    marginLeft: 10,
   },
   netflixPortraitOverlay: {
     position: 'absolute',

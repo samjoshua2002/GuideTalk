@@ -9,6 +9,12 @@ import {
   Switch,
   Animated,
   Platform,
+  Alert,
+  ActivityIndicator,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,20 +23,31 @@ import * as FileSystem from 'expo-file-system';
 import * as IntentLauncher from 'expo-intent-launcher';
 import * as Linking from 'expo-linking';
 import * as Updates from 'expo-updates';
+import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '@/src/context/ThemeContext';
 import { useAuth } from '@/src/context/AuthContext';
 import { LiquidGlassView } from '@/src/components/LiquidGlassView';
 import { GlowButton } from '@/src/components/GlowButton';
 import { AuthModal } from '@/src/components/AuthModal';
+import { EmailVerificationGate } from '@/src/components/EmailVerificationGate';
 import { getHapticsEnabled, setHapticsEnabled, triggerHaptic } from '@/src/lib/haptics';
 import { getEffectiveAppVersion, getEffectiveVersionCode, isRunningOtaUpdate } from '@/src/lib/version';
 import { fetchAppVersion, AppVersionInfo } from '@/src/lib/chatApi';
 
 export default function ProfileScreen() {
   const { theme, isDark, toggleTheme } = useTheme();
-  const { user, isGuest, logout } = useAuth();
+  const { user, isGuest, logout, updateProfile } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [hapticsOn, setHapticsOn] = useState<boolean>(getHapticsEnabled());
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarSuccessBanner, setAvatarSuccessBanner] = useState(false);
+
+  // ── Name & Verification State ─────────────────────────────────────────────
+  const [showEditNameModal, setShowEditNameModal] = useState(false);
+  const [editNameInput, setEditNameInput] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [nameSavedBanner, setNameSavedBanner] = useState(false);
+  const [showVerificationGate, setShowVerificationGate] = useState(false);
 
   // ── Update Check State ────────────────────────────────────────────────────
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
@@ -266,6 +283,66 @@ export default function ProfileScreen() {
     outputRange: ['0deg', '360deg'],
   });
 
+  const handlePickAvatar = async () => {
+    try {
+      triggerHaptic('light');
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Photo Permission Needed',
+          'Please allow photo gallery access in settings to upload your custom profile picture.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]?.uri) {
+        setIsUploadingAvatar(true);
+        triggerHaptic('medium');
+        await updateProfile({ avatarUrl: result.assets[0].uri });
+        triggerHaptic('success');
+        setAvatarSuccessBanner(true);
+        setTimeout(() => setAvatarSuccessBanner(false), 3000);
+      }
+    } catch (err: any) {
+      console.warn('Avatar pick error:', err);
+      Alert.alert('Upload Error', 'Failed to pick image. Please try again.');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleOpenEditName = () => {
+    setEditNameInput(user?.name || user?.username || '');
+    setShowEditNameModal(true);
+  };
+
+  const handleSaveName = async () => {
+    const trimmed = editNameInput.trim();
+    if (!trimmed) {
+      Alert.alert('Invalid Name', 'Display name cannot be empty.');
+      return;
+    }
+    setIsSavingName(true);
+    triggerHaptic('medium');
+    try {
+      await updateProfile({ name: trimmed });
+      triggerHaptic('success');
+      setShowEditNameModal(false);
+      setNameSavedBanner(true);
+      setTimeout(() => setNameSavedBanner(false), 3000);
+    } catch (e: any) {
+      Alert.alert('Update Failed', e?.message || 'Could not update your display name.');
+    } finally {
+      setIsSavingName(false);
+    }
+  };
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: theme.background }]} edges={['top']}>
@@ -276,23 +353,119 @@ export default function ProfileScreen() {
         {/* User Card */}
         <LiquidGlassView style={styles.profileCard} borderRadius={24} intensity={35} elevated>
           <View style={styles.profileHeader}>
-            <Image
-              source={{
-                uri:
-                  user?.avatarUrl ||
-                  `https://api.dicebear.com/9.x/adventurer/png?seed=${encodeURIComponent(user?.username || 'Guest')}&backgroundColor=000000`,
-              }}
-              style={styles.avatar}
-            />
+            <Pressable
+              onPress={handlePickAvatar}
+              disabled={isUploadingAvatar}
+              style={({ pressed }) => [
+                styles.avatarPressable,
+                { opacity: pressed ? 0.85 : 1 },
+              ]}
+              hitSlop={8}
+            >
+              <Image
+                source={{
+                  uri:
+                    user?.avatarUrl ||
+                    `https://api.dicebear.com/9.x/adventurer/png?seed=${encodeURIComponent(user?.username || 'Guest')}&backgroundColor=000000`,
+                }}
+                style={styles.avatar}
+              />
+              <View style={[styles.avatarCameraBadge, { backgroundColor: theme.text }]}>
+                {isUploadingAvatar ? (
+                  <ActivityIndicator size="small" color={theme.background} />
+                ) : (
+                  <Ionicons name="camera" size={12} color={theme.background} />
+                )}
+              </View>
+            </Pressable>
+
             <View style={{ flex: 1 }}>
-              <Text style={[styles.name, { color: theme.text }]}>
-                {user?.name || (isGuest ? 'Guest Traveler' : user?.username)}
-              </Text>
+              {/* Name Row with Verified Checkmark & Quick Edit Pencil */}
+              <View style={styles.nameRow}>
+                <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
+                  {user?.name || (isGuest ? 'Guest Traveler' : user?.username)}
+                </Text>
+                {user?.isEmailVerified && (
+                  <View style={styles.verifiedCheckBadge}>
+                    <Ionicons name="checkmark-circle" size={19} color="#0A84FF" />
+                  </View>
+                )}
+                {user && !isGuest && (
+                  <Pressable
+                    onPress={handleOpenEditName}
+                    hitSlop={8}
+                    style={[styles.editNameIconBtn, { backgroundColor: theme.surfaceSecondary }]}
+                    accessibilityLabel="Edit display name"
+                  >
+                    <Ionicons name="pencil" size={12} color={theme.text} />
+                  </Pressable>
+                )}
+              </View>
+
               <Text style={[styles.username, { color: theme.secondary }]}>
-                {user ? `@${user.username} · MongoDB Cloud Active` : 'Guest Mode (Local Session)'}
+                {user ? `@${user.username} · Active Session` : 'Guest Mode (Local Session)'}
               </Text>
+
+              {/* Status Badge Pills */}
+              <View style={styles.statusPillsRow}>
+                {user?.isEmailVerified ? (
+                  <View style={[styles.statusBadge, { backgroundColor: 'rgba(10, 132, 255, 0.12)', borderColor: 'rgba(10, 132, 255, 0.35)' }]}>
+                    <Ionicons name="shield-checkmark" size={11} color="#0A84FF" />
+                    <Text style={[styles.statusBadgeText, { color: '#0A84FF' }]}>Verified Account</Text>
+                  </View>
+                ) : user && !isGuest ? (
+                  <Pressable
+                    onPress={() => {
+                      triggerHaptic('light');
+                      setShowVerificationGate(true);
+                    }}
+                    style={[styles.statusBadge, { backgroundColor: 'rgba(255, 149, 0, 0.12)', borderColor: 'rgba(255, 149, 0, 0.4)' }]}
+                  >
+                    <Ionicons name="alert-circle" size={11} color="#FF9500" />
+                    <Text style={[styles.statusBadgeText, { color: '#FF9500' }]}>Unverified • Tap to Verify</Text>
+                  </Pressable>
+                ) : null}
+
+                {user?.hasPasskey && (
+                  <View style={[styles.statusBadge, { backgroundColor: 'rgba(52, 199, 89, 0.12)', borderColor: 'rgba(52, 199, 89, 0.35)' }]}>
+                    <Ionicons name="finger-print" size={11} color="#34C759" />
+                    <Text style={[styles.statusBadgeText, { color: '#34C759' }]}>Passkey</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Action Buttons: Attach Photo & Edit Name */}
+              <View style={styles.profileActionBtnsRow}>
+                <Pressable
+                  onPress={handlePickAvatar}
+                  disabled={isUploadingAvatar}
+                  style={[
+                    styles.changePhotoBtn,
+                    { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
+                  ]}
+                >
+                  <Ionicons name="camera-outline" size={12} color={theme.text} />
+                  <Text style={[styles.changePhotoText, { color: theme.text }]}>
+                    {isUploadingAvatar ? 'Updating…' : 'Attach Photo'}
+                  </Text>
+                </Pressable>
+
+                {user && !isGuest && (
+                  <Pressable
+                    onPress={handleOpenEditName}
+                    style={[
+                      styles.changePhotoBtn,
+                      { backgroundColor: theme.surfaceSecondary, borderColor: theme.border },
+                    ]}
+                  >
+                    <Ionicons name="create-outline" size={12} color={theme.text} />
+                    <Text style={[styles.changePhotoText, { color: theme.text }]}>Edit Name</Text>
+                  </Pressable>
+                )}
+              </View>
+
               {(user?.age || user?.language) && (
-                <View style={{ flexDirection: 'row', gap: 6, marginTop: 6 }}>
+                <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
                   {user.age && (
                     <View style={[styles.profileBadge, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
                       <Ionicons name="calendar-outline" size={11} color={theme.secondary} />
@@ -309,6 +482,20 @@ export default function ProfileScreen() {
               )}
             </View>
           </View>
+
+          {avatarSuccessBanner && (
+            <View style={styles.avatarSuccessPill}>
+              <Ionicons name="checkmark-circle" size={14} color="#34C759" />
+              <Text style={styles.avatarSuccessText}>Profile photo updated successfully!</Text>
+            </View>
+          )}
+
+          {nameSavedBanner && (
+            <View style={[styles.avatarSuccessPill, { borderColor: 'rgba(10, 132, 255, 0.35)', backgroundColor: 'rgba(10, 132, 255, 0.14)' }]}>
+              <Ionicons name="checkmark-circle" size={14} color="#0A84FF" />
+              <Text style={[styles.avatarSuccessText, { color: '#0A84FF' }]}>Display name saved successfully!</Text>
+            </View>
+          )}
 
           <View style={{ marginTop: 16 }}>
             {user ? (
@@ -599,6 +786,99 @@ export default function ProfileScreen() {
         </LiquidGlassView>
       </ScrollView>
 
+      {/* Edit Display Name Modal */}
+      <Modal
+        visible={showEditNameModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowEditNameModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
+          <TouchableWithoutFeedback onPress={() => setShowEditNameModal(false)}>
+            <View style={styles.modalBackdropFill} />
+          </TouchableWithoutFeedback>
+
+          <View style={[styles.editNameModalCard, { backgroundColor: theme.surfaceSolid, borderColor: theme.border }]}>
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={[styles.modalCardTitle, { color: theme.text }]}>Edit Display Name</Text>
+                <Text style={[styles.modalCardSubtitle, { color: theme.secondary }]}>
+                  How your companions address you in conversation
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setShowEditNameModal(false)}
+                hitSlop={8}
+                style={[styles.modalCloseIconBtn, { backgroundColor: theme.surfaceSecondary }]}
+              >
+                <Ionicons name="close" size={18} color={theme.text} />
+              </Pressable>
+            </View>
+
+            <View style={[styles.editNameInputWrap, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
+              <Ionicons name="person-outline" size={17} color={theme.secondary} style={{ marginRight: 10 }} />
+              <TextInput
+                value={editNameInput}
+                onChangeText={setEditNameInput}
+                placeholder="Enter your name…"
+                placeholderTextColor={theme.muted}
+                maxLength={40}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={handleSaveName}
+                style={[styles.editNameTextInput, { color: theme.text }]}
+              />
+              {editNameInput.length > 0 && (
+                <Pressable onPress={() => setEditNameInput('')} hitSlop={6}>
+                  <Ionicons name="close-circle" size={16} color={theme.muted} />
+                </Pressable>
+              )}
+            </View>
+
+            <View style={styles.modalActionButtonsRow}>
+              <Pressable
+                onPress={() => setShowEditNameModal(false)}
+                disabled={isSavingName}
+                style={[styles.modalCancelBtn, { borderColor: theme.border }]}
+              >
+                <Text style={[styles.modalCancelBtnText, { color: theme.secondary }]}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleSaveName}
+                disabled={isSavingName || !editNameInput.trim()}
+                style={[
+                  styles.modalSaveBtn,
+                  { backgroundColor: theme.text },
+                  (!editNameInput.trim() || isSavingName) && { opacity: 0.4 },
+                ]}
+              >
+                {isSavingName ? (
+                  <ActivityIndicator size="small" color={theme.background} />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={16} color={theme.background} style={{ marginRight: 6 }} />
+                    <Text style={[styles.modalSaveBtnText, { color: theme.background }]}>Save Name</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Email Verification Gate */}
+      <EmailVerificationGate
+        visible={showVerificationGate}
+        onDismiss={() => setShowVerificationGate(false)}
+        onSuccess={() => setShowVerificationGate(false)}
+        title="Verify Account"
+        subtitle="Verify your email to secure your account and unlock your verified badge."
+      />
+
       <AuthModal visible={showAuthModal} onClose={() => setShowAuthModal(false)} />
     </SafeAreaView>
   );
@@ -633,11 +913,63 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 16,
   },
+  avatarPressable: {
+    position: 'relative',
+  },
   avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     backgroundColor: 'rgba(0,0,0,0.1)',
+  },
+  avatarCameraBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#000',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  changePhotoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  changePhotoText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  avatarSuccessPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(52, 199, 89, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(52, 199, 89, 0.35)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    marginTop: 14,
+  },
+  avatarSuccessText: {
+    color: '#34C759',
+    fontSize: 12,
+    fontWeight: '700',
   },
   name: {
     fontSize: 20,
@@ -925,6 +1257,136 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '600',
     flex: 1,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  verifiedCheckBadge: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editNameIconBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusPillsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+    marginTop: 5,
+    marginBottom: 4,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  statusBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  profileActionBtnsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalBackdropFill: {
+    ...StyleSheet.absoluteFill,
+  },
+  editNameModalCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  modalCardTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  modalCardSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  modalCloseIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editNameInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    height: 48,
+    marginBottom: 18,
+  },
+  editNameTextInput: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  modalActionButtonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalSaveBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  modalSaveBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
 
