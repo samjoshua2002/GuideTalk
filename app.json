@@ -35,7 +35,8 @@
         "RECEIVE_BOOT_COMPLETED",
         "POST_NOTIFICATIONS",
         "SCHEDULE_EXACT_ALARM",
-        "VIBRATE"
+        "VIBRATE",
+        "REQUEST_INSTALL_PACKAGES"
       ]
     },
     "web": {
@@ -47,7 +48,9 @@
         "projectId": "05720c5e-6279-4d8d-b20a-45c2114a9dc8"
       }
     },
-    "runtimeVersion": "1.0.5",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "updates": {
       "url": "https://u.expo.dev/05720c5e-6279-4d8d-b20a-45c2114a9dc8"
     }

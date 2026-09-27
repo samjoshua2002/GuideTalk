@@ -19,7 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystemLegacy from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import * as Linking from 'expo-linking';
 import * as Updates from 'expo-updates';
@@ -59,8 +59,9 @@ export default function ProfileScreen() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0); // 0–1
   const [downloadDone, setDownloadDone] = useState(false);
+  const [downloadedUri, setDownloadedUri] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
-  const downloadTaskRef = useRef<FileSystem.DownloadTask | null>(null);
+  const downloadTaskRef = useRef<FileSystemLegacy.DownloadResumable | null>(null);
   const progressAnim = useRef(new Animated.Value(0)).current;
   const bannerAnim = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
@@ -167,6 +168,33 @@ export default function ProfileScreen() {
   };
 
   const handleInstallUpdate = async () => {
+    const rawApk = updateInfo?.apkUrl || '';
+    const apkUrl = rawApk.toLowerCase().includes('.apk')
+      ? rawApk
+      : 'https://expo.dev/artifacts/eas/1Ocs_q69VOCzESXZZVcXGFIkgNVKolLQ7ZUI3bRTYc0.apk';
+
+    // If download is already done on Android, re-launch package installer
+    if (downloadDone) {
+      if (otaUpdateAvailable && !updateInfo?.apkUrl) {
+        await Updates.reloadAsync();
+        return;
+      }
+      if (Platform.OS === 'android' && downloadedUri) {
+        try {
+          const contentUri = await FileSystemLegacy.getContentUriAsync(downloadedUri);
+          await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+            data: contentUri,
+            flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+            type: 'application/vnd.android.package-archive',
+          });
+          return;
+        } catch (e) {
+          Linking.openURL(apkUrl).catch(() => {});
+          return;
+        }
+      }
+    }
+
     if (isDownloading) return;
 
     triggerHaptic('heavy');
@@ -175,8 +203,8 @@ export default function ProfileScreen() {
     setDownloadError(null);
     progressAnim.setValue(0);
 
-    // 1. In-app Expo OTA update: downloads within app & reloads immediately
-    if (Updates.isEnabled && Platform.OS !== 'web') {
+    // 1. In-app Expo OTA update: ONLY for genuine JS OTA updates without APK url
+    if (otaUpdateAvailable && !updateInfo?.apkUrl && Updates.isEnabled && Platform.OS !== 'web') {
       setIsDownloading(true);
       let curP = 0.08;
       setDownloadProgress(curP);
@@ -217,61 +245,71 @@ export default function ProfileScreen() {
     }
 
     // 2. Direct APK download and install inside app for Android
-    const rawApk = updateInfo?.apkUrl || '';
-    const apkUrl = rawApk.toLowerCase().includes('.apk')
-      ? rawApk
-      : 'https://expo.dev/artifacts/eas/1Ocs_q69VOCzESXZZVcXGFIkgNVKolLQ7ZUI3bRTYc0.apk';
-
     if (Platform.OS === 'android') {
       setIsDownloading(true);
       try {
-        const destFile = new FileSystem.File(FileSystem.Paths.cache, 'guidetalk_update.apk');
-        if (destFile.exists) {
-          try {
-            destFile.delete();
-          } catch {}
-        }
+        const targetUri = `${FileSystemLegacy.cacheDirectory}guidetalk_update.apk`;
 
-        const downloadTask = FileSystem.File.createDownloadTask(
+        try {
+          const existingInfo = await FileSystemLegacy.getInfoAsync(targetUri);
+          if (existingInfo.exists) {
+            await FileSystemLegacy.deleteAsync(targetUri, { idempotent: true });
+          }
+        } catch {}
+
+        const downloadResumable = FileSystemLegacy.createDownloadResumable(
           apkUrl,
-          destFile,
-          {
-            onProgress: (data) => {
-              const { bytesWritten, totalBytes } = data;
-              const ratio = totalBytes > 0 ? bytesWritten / totalBytes : 0;
-              setDownloadProgress(ratio);
-              Animated.timing(progressAnim, {
-                toValue: ratio,
-                duration: 100,
-                useNativeDriver: false,
-              }).start();
-            },
+          targetUri,
+          {},
+          (data) => {
+            const { totalBytesWritten, totalBytesExpectedToWrite } = data;
+            const ratio = totalBytesExpectedToWrite > 0 ? totalBytesWritten / totalBytesExpectedToWrite : 0;
+            setDownloadProgress(ratio);
+            Animated.timing(progressAnim, {
+              toValue: ratio,
+              duration: 100,
+              useNativeDriver: false,
+            }).start();
           }
         );
+        downloadTaskRef.current = downloadResumable;
 
-        const result = await downloadTask.downloadAsync();
+        const result = await downloadResumable.downloadAsync();
         if (!result?.uri) {
           throw new Error('Download failed: No file URI received.');
         }
 
+        setDownloadedUri(result.uri);
         setDownloadProgress(1);
         progressAnim.setValue(1);
-
-        const contentUri = await FileSystem.getContentUriAsync(result.uri);
-        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-          data: contentUri,
-          flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
-          type: 'application/vnd.android.package-archive',
-        });
         setDownloadDone(true);
+        triggerHaptic('success');
+
+        try {
+          const contentUri = await FileSystemLegacy.getContentUriAsync(result.uri);
+          await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+            data: contentUri,
+            flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+            type: 'application/vnd.android.package-archive',
+          });
+        } catch (intentErr) {
+          console.log('Intent launcher failed in profile, falling back to browser:', intentErr);
+          await Linking.openURL(apkUrl);
+        }
         return;
       } catch (err: any) {
         console.log('APK download error in profile:', err);
         setDownloadError(err?.message || 'Download failed within app.');
+        Linking.openURL(apkUrl).catch(() => {});
         return;
       } finally {
         setIsDownloading(false);
       }
+    }
+
+    if (rawApk && (Platform.OS as string) !== 'android') {
+      Linking.openURL(rawApk).catch(() => {});
+      return;
     }
 
     setDownloadError('Update could not be applied automatically.');
@@ -665,11 +703,11 @@ export default function ProfileScreen() {
               {/* ── Install Button ── */}
               <Pressable
                 onPress={handleInstallUpdate}
-                disabled={isDownloading || (downloadDone && !downloadError)}
+                disabled={isDownloading}
                 style={({ pressed }) => [
                   styles.installBtn,
-                  (isDownloading || (downloadDone && !downloadError)) && styles.installBtnDisabled,
-                  pressed && !isDownloading && !downloadDone && { opacity: 0.88 },
+                  isDownloading && styles.installBtnDisabled,
+                  pressed && !isDownloading && { opacity: 0.88 },
                 ]}
               >
                 <View style={styles.installBtnInner}>
@@ -680,10 +718,11 @@ export default function ProfileScreen() {
                     </>
                   ) : downloadDone && !downloadError ? (
                     <>
-                      <Ionicons name="checkmark-circle" size={17} color="#FFFFFF" />
+                      <Ionicons name="play-circle" size={17} color="#FFFFFF" />
                       <Text style={styles.installBtnText}>
-                        {otaUpdateAvailable ? 'Applying Update…' : 'Installer Launched'}
+                        {otaUpdateAvailable ? 'Restart App' : 'Launch Package Installer'}
                       </Text>
+                      <Ionicons name="chevron-forward" size={15} color="rgba(255,255,255,0.7)" />
                     </>
                   ) : (
                     <>
@@ -700,6 +739,32 @@ export default function ProfileScreen() {
                   )}
                 </View>
               </Pressable>
+
+              {Platform.OS === 'android' && (
+                <Pressable
+                  onPress={() => {
+                    triggerHaptic('light');
+                    const rawApk = updateInfo?.apkUrl || '';
+                    const apkUrl = rawApk.toLowerCase().includes('.apk')
+                      ? rawApk
+                      : 'https://expo.dev/artifacts/eas/1Ocs_q69VOCzESXZZVcXGFIkgNVKolLQ7ZUI3bRTYc0.apk';
+                    Linking.openURL(apkUrl).catch(() => {});
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingTop: 10,
+                    paddingBottom: 4,
+                  }}
+                  hitSlop={8}
+                >
+                  <Ionicons name="cloud-download-outline" size={13} color="#0A84FF" style={{ marginRight: 5 }} />
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: '#0A84FF' }}>
+                    Open Direct APK in Browser
+                  </Text>
+                </Pressable>
+              )}
             </LiquidGlassView>
           </Animated.View>
         )}

@@ -16,7 +16,7 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Updates from 'expo-updates';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystemLegacy from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { useTheme } from '@/src/context/ThemeContext';
 import { LiquidGlassView } from './LiquidGlassView';
@@ -72,11 +72,39 @@ export function NewVersionModal({
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadBytes, setDownloadBytes] = useState<{ written: number; total: number } | null>(null);
   const [downloadDone, setDownloadDone] = useState(false);
+  const [downloadedUri, setDownloadedUri] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const progressAnim = useRef(new Animated.Value(0)).current;
 
+  const rawApkUrl = updateInfo?.apkUrl || '';
+  const directApk = rawApkUrl.toLowerCase().includes('.apk')
+    ? rawApkUrl
+    : 'https://expo.dev/artifacts/eas/1Ocs_q69VOCzESXZZVcXGFIkgNVKolLQ7ZUI3bRTYc0.apk';
+
   const handleUpdatePress = async () => {
+    // If download is already complete, re-launch action
+    if (downloadDone) {
+      if (otaUpdateAvailable && !updateInfo?.apkUrl) {
+        await Updates.reloadAsync();
+        return;
+      }
+      if (Platform.OS === 'android' && downloadedUri) {
+        try {
+          const contentUri = await FileSystemLegacy.getContentUriAsync(downloadedUri);
+          await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+            data: contentUri,
+            flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+            type: 'application/vnd.android.package-archive',
+          });
+          return;
+        } catch (e) {
+          Linking.openURL(directApk).catch(() => {});
+          return;
+        }
+      }
+    }
+
     if (isDownloading) return;
 
     triggerHaptic('heavy');
@@ -87,8 +115,8 @@ export function NewVersionModal({
     setDownloadError(null);
     progressAnim.setValue(0);
 
-    // 1. In-app Expo OTA update: downloads within app & reloads immediately
-    if (Updates.isEnabled && Platform.OS !== 'web') {
+    // 1. In-app Expo OTA update: ONLY for genuine JS OTA updates without APK url
+    if (otaUpdateAvailable && !updateInfo?.apkUrl && Updates.isEnabled && Platform.OS !== 'web') {
       let currentP = 0.08;
       setDownloadProgress(currentP);
       progressAnim.setValue(currentP);
@@ -127,36 +155,40 @@ export function NewVersionModal({
     }
 
     // 2. Direct APK download inside app & launch Android installer
-    const rawApkUrl = updateInfo?.apkUrl || '';
-    const directApk = rawApkUrl.toLowerCase().includes('.apk')
-      ? rawApkUrl
-      : 'https://expo.dev/artifacts/eas/F47jYsqvnEJDj44OAIObDc0p1Emd4kMgH-k7OosN_vg.apk';
-
     if (Platform.OS === 'android') {
       try {
-        const destFile = new FileSystem.File(FileSystem.Paths.cache, 'guidetalk_update.apk');
-        if (destFile.exists) {
-          try {
-            destFile.delete();
-          } catch {}
-        }
+        const targetUri = `${FileSystemLegacy.cacheDirectory}guidetalk_update.apk`;
 
-        const downloadTask = FileSystem.File.createDownloadTask(directApk, destFile, {
-          onProgress: (data) => {
-            const { bytesWritten, totalBytes } = data;
-            const ratio = totalBytes > 0 ? bytesWritten / totalBytes : 0;
+        try {
+          const existing = await FileSystemLegacy.getInfoAsync(targetUri);
+          if (existing.exists) {
+            await FileSystemLegacy.deleteAsync(targetUri, { idempotent: true });
+          }
+        } catch {}
+
+        const downloadResumable = FileSystemLegacy.createDownloadResumable(
+          directApk,
+          targetUri,
+          {},
+          (data) => {
+            const { totalBytesWritten, totalBytesExpectedToWrite } = data;
+            const ratio = totalBytesExpectedToWrite > 0 ? totalBytesWritten / totalBytesExpectedToWrite : 0;
             setDownloadProgress(ratio);
-            setDownloadBytes({ written: bytesWritten, total: totalBytes });
+            setDownloadBytes({ written: totalBytesWritten, total: totalBytesExpectedToWrite });
             Animated.timing(progressAnim, {
               toValue: ratio,
               duration: 100,
               useNativeDriver: false,
             }).start();
-          },
-        });
+          }
+        );
 
-        await downloadTask.downloadAsync();
+        const result = await downloadResumable.downloadAsync();
+        if (!result?.uri) {
+          throw new Error('APK download failed: No file URI received.');
+        }
 
+        setDownloadedUri(result.uri);
         setDownloadProgress(1);
         Animated.timing(progressAnim, {
           toValue: 1,
@@ -165,21 +197,34 @@ export function NewVersionModal({
         }).start();
 
         setDownloadDone(true);
+        setIsDownloading(false);
         triggerHaptic('success');
 
-        const contentUri = await FileSystem.getContentUriAsync(destFile.uri);
-        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-          data: contentUri,
-          flags: 1,
-          type: 'application/vnd.android.package-archive',
-        });
+        try {
+          const contentUri = await FileSystemLegacy.getContentUriAsync(result.uri);
+          await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+            data: contentUri,
+            flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+            type: 'application/vnd.android.package-archive',
+          });
+        } catch (intentErr) {
+          console.log('Intent launch failed, falling back to browser:', intentErr);
+          await Linking.openURL(directApk);
+        }
         return;
       } catch (apkErr: any) {
         console.log('APK download error:', apkErr);
         setDownloadError(apkErr?.message || 'Failed to download installer within app.');
         setIsDownloading(false);
+        Linking.openURL(directApk).catch(() => {});
         return;
       }
+    }
+
+    if (rawApkUrl && (Platform.OS as string) !== 'android') {
+      Linking.openURL(rawApkUrl).catch(() => {});
+      setIsDownloading(false);
+      return;
     }
 
     setDownloadError('Update could not be applied automatically.');
@@ -318,12 +363,39 @@ export function NewVersionModal({
             {/* Actions */}
             <View style={styles.actionContainer}>
               <GlowButton
-                label={isDownloading ? 'Installing Update...' : `Update Now (${versionTag})`}
+                label={
+                  isDownloading
+                    ? 'Downloading...'
+                    : downloadDone
+                    ? (otaUpdateAvailable && !updateInfo?.apkUrl ? 'Restart App' : 'Launch Installer')
+                    : `Update Now (${versionTag})`
+                }
                 onPress={handleUpdatePress}
                 disabled={isDownloading}
                 variant="primary"
                 style={{ width: '100%' }}
               />
+
+              {Platform.OS === 'android' && (
+                <Pressable
+                  onPress={() => {
+                    triggerHaptic('light');
+                    Linking.openURL(directApk).catch(() => {});
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingTop: 4,
+                  }}
+                  hitSlop={8}
+                >
+                  <Ionicons name="cloud-download-outline" size={13} color="#0A84FF" style={{ marginRight: 5 }} />
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: '#0A84FF' }}>
+                    Open Direct APK in Browser
+                  </Text>
+                </Pressable>
+              )}
 
               <Pressable
                 onPress={() => {

@@ -16,7 +16,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Updates from 'expo-updates';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystemLegacy from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { useTheme } from '@/src/context/ThemeContext';
 import { GlowButton } from './GlowButton';
@@ -70,11 +70,39 @@ export function FullPageUpdateScreen({
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadBytes, setDownloadBytes] = useState<{ written: number; total: number } | null>(null);
   const [downloadDone, setDownloadDone] = useState(false);
+  const [downloadedUri, setDownloadedUri] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const progressAnim = useRef(new Animated.Value(0)).current;
 
+  const rawApkUrl = updateInfo?.apkUrl || '';
+  const directApk = rawApkUrl.toLowerCase().includes('.apk')
+    ? rawApkUrl
+    : 'https://expo.dev/artifacts/eas/1Ocs_q69VOCzESXZZVcXGFIkgNVKolLQ7ZUI3bRTYc0.apk';
+
   const handleUpdatePress = async () => {
+    // If download is already completed, re-trigger action immediately
+    if (downloadDone) {
+      if (otaUpdateAvailable && !updateInfo?.apkUrl) {
+        await Updates.reloadAsync();
+        return;
+      }
+      if (Platform.OS === 'android' && downloadedUri) {
+        try {
+          const contentUri = await FileSystemLegacy.getContentUriAsync(downloadedUri);
+          await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+            data: contentUri,
+            flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+            type: 'application/vnd.android.package-archive',
+          });
+          return;
+        } catch (e) {
+          Linking.openURL(directApk).catch(() => {});
+          return;
+        }
+      }
+    }
+
     if (isDownloading) return;
 
     triggerHaptic('heavy');
@@ -85,8 +113,8 @@ export function FullPageUpdateScreen({
     setDownloadError(null);
     progressAnim.setValue(0);
 
-    // 1. In-app Expo OTA update: downloads within app & reloads immediately
-    if (Updates.isEnabled && Platform.OS !== 'web') {
+    // 1. In-app Expo OTA update: ONLY execute when genuine JS OTA update is available AND no native APK url provided
+    if (otaUpdateAvailable && !updateInfo?.apkUrl && Updates.isEnabled && Platform.OS !== 'web') {
       let currentP = 0.08;
       setDownloadProgress(currentP);
       progressAnim.setValue(currentP);
@@ -125,36 +153,40 @@ export function FullPageUpdateScreen({
     }
 
     // 2. Direct APK download inside app & launch Android installer
-    const rawApkUrl = updateInfo?.apkUrl || '';
-    const directApk = rawApkUrl.toLowerCase().includes('.apk')
-      ? rawApkUrl
-      : 'https://expo.dev/artifacts/eas/1Ocs_q69VOCzESXZZVcXGFIkgNVKolLQ7ZUI3bRTYc0.apk';
-
     if (Platform.OS === 'android') {
       try {
-        const destFile = new FileSystem.File(FileSystem.Paths.cache, 'guidetalk_update.apk');
-        if (destFile.exists) {
-          try {
-            destFile.delete();
-          } catch {}
-        }
+        const targetUri = `${FileSystemLegacy.cacheDirectory}guidetalk_update.apk`;
 
-        const downloadTask = FileSystem.File.createDownloadTask(directApk, destFile, {
-          onProgress: (data) => {
-            const { bytesWritten, totalBytes } = data;
-            const ratio = totalBytes > 0 ? bytesWritten / totalBytes : 0;
+        try {
+          const existingInfo = await FileSystemLegacy.getInfoAsync(targetUri);
+          if (existingInfo.exists) {
+            await FileSystemLegacy.deleteAsync(targetUri, { idempotent: true });
+          }
+        } catch {}
+
+        const downloadResumable = FileSystemLegacy.createDownloadResumable(
+          directApk,
+          targetUri,
+          {},
+          (data) => {
+            const { totalBytesWritten, totalBytesExpectedToWrite } = data;
+            const ratio = totalBytesExpectedToWrite > 0 ? totalBytesWritten / totalBytesExpectedToWrite : 0;
             setDownloadProgress(ratio);
-            setDownloadBytes({ written: bytesWritten, total: totalBytes });
+            setDownloadBytes({ written: totalBytesWritten, total: totalBytesExpectedToWrite });
             Animated.timing(progressAnim, {
               toValue: ratio,
               duration: 100,
               useNativeDriver: false,
             }).start();
-          },
-        });
+          }
+        );
 
-        await downloadTask.downloadAsync();
+        const result = await downloadResumable.downloadAsync();
+        if (!result?.uri) {
+          throw new Error('APK download failed: No file URI received.');
+        }
 
+        setDownloadedUri(result.uri);
         setDownloadProgress(1);
         Animated.timing(progressAnim, {
           toValue: 1,
@@ -163,19 +195,27 @@ export function FullPageUpdateScreen({
         }).start();
 
         setDownloadDone(true);
+        setIsDownloading(false);
         triggerHaptic('success');
 
-        const contentUri = await FileSystem.getContentUriAsync(destFile.uri);
-        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-          data: contentUri,
-          flags: 1,
-          type: 'application/vnd.android.package-archive',
-        });
+        try {
+          const contentUri = await FileSystemLegacy.getContentUriAsync(result.uri);
+          await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+            data: contentUri,
+            flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+            type: 'application/vnd.android.package-archive',
+          });
+        } catch (intentErr) {
+          console.log('Intent launcher failed, falling back to browser:', intentErr);
+          await Linking.openURL(directApk);
+        }
         return;
       } catch (apkErr: any) {
         console.log('APK download error:', apkErr);
         setDownloadError(apkErr?.message || 'Failed to download installer within app.');
         setIsDownloading(false);
+        // Direct browser fallback on error
+        Linking.openURL(directApk).catch(() => {});
         return;
       }
     }
@@ -370,17 +410,33 @@ export function FullPageUpdateScreen({
               label={
                 isDownloading
                   ? downloadDone
-                    ? 'Installing...'
-                    : 'Downloading...'
+                    ? 'Launching Installer...'
+                    : 'Downloading APK...'
                   : downloadDone
-                  ? 'Reload App'
-                  : 'Install & Reload Update'
+                  ? (otaUpdateAvailable && !updateInfo?.apkUrl ? 'Reload App' : 'Launch Package Installer')
+                  : (otaUpdateAvailable && !updateInfo?.apkUrl ? 'Download & Reload Update' : 'Download & Install APK')
               }
               onPress={handleUpdatePress}
               variant="primary"
               style={styles.primaryActionButton}
               disabled={isDownloading && !downloadDone}
             />
+
+            {Platform.OS === 'android' && (
+              <Pressable
+                onPress={() => {
+                  triggerHaptic('light');
+                  Linking.openURL(directApk).catch(() => {});
+                }}
+                style={styles.directBrowserButton}
+                hitSlop={8}
+              >
+                <Ionicons name="cloud-download-outline" size={14} color="#0A84FF" style={{ marginRight: 6 }} />
+                <Text style={styles.directBrowserText}>
+                  Direct Browser Download (APK)
+                </Text>
+              </Pressable>
+            )}
 
             {!updateInfo?.forceUpdate && (
               <Pressable
@@ -620,5 +676,17 @@ const styles = StyleSheet.create({
   skipButtonText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  directBrowserButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  directBrowserText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0A84FF',
   },
 });
