@@ -2888,7 +2888,7 @@ const server = http.createServer(async (request, response) => {
       return sendJson(response, 200, {
         latestVersion: process.env.APP_LATEST_VERSION || '1.0.8',
         latestVersionCode: Number(process.env.APP_LATEST_VERSION_CODE || 9),
-        apkUrl: process.env.APP_APK_URL || 'https://expo.dev/artifacts/eas/F47jYsqvnEJDj44OAIObDc0p1Emd4kMgH-k7OosN_vg.apk',
+        apkUrl: process.env.APP_APK_URL || 'https://expo.dev/artifacts/eas/1Ocs_q69VOCzESXZZVcXGFIkgNVKolLQ7ZUI3bRTYc0.apk',
         title: 'GuideTalk v1.0.8: Security & Passkeys 🛡️',
         message: 'Production Gmail account verification, Apple Face ID & Touch ID passkeys, and full-page Home updates.',
         releaseNotes: [

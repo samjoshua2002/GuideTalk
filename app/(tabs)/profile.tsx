@@ -220,7 +220,7 @@ export default function ProfileScreen() {
     const rawApk = updateInfo?.apkUrl || '';
     const apkUrl = rawApk.toLowerCase().includes('.apk')
       ? rawApk
-      : 'https://expo.dev/artifacts/eas/F47jYsqvnEJDj44OAIObDc0p1Emd4kMgH-k7OosN_vg.apk';
+      : 'https://expo.dev/artifacts/eas/1Ocs_q69VOCzESXZZVcXGFIkgNVKolLQ7ZUI3bRTYc0.apk';
 
     if (Platform.OS === 'android') {
       setIsDownloading(true);

@@ -128,7 +128,7 @@ export function FullPageUpdateScreen({
     const rawApkUrl = updateInfo?.apkUrl || '';
     const directApk = rawApkUrl.toLowerCase().includes('.apk')
       ? rawApkUrl
-      : 'https://expo.dev/artifacts/eas/F47jYsqvnEJDj44OAIObDc0p1Emd4kMgH-k7OosN_vg.apk';
+      : 'https://expo.dev/artifacts/eas/1Ocs_q69VOCzESXZZVcXGFIkgNVKolLQ7ZUI3bRTYc0.apk';
 
     if (Platform.OS === 'android') {
       try {
